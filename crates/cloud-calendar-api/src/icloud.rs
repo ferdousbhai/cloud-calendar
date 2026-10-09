@@ -399,6 +399,10 @@ impl Provider for ICloud {
         params.extend([("methodOverride", "DELETE".to_string()), ("ifMatch", etag)]);
         self.post(&format!("events/{pguid}/{guid}"), &params, &body).map(|_| ())
     }
+
+    fn series_support(&self) -> provider::SeriesSupport {
+        provider::SeriesSupport { edit: false, delete: false }
+    }
 }
 
 #[cfg(test)]

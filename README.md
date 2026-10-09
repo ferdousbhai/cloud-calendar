@@ -125,7 +125,7 @@ From the terminal:
 ```sh
 cloud-calendar today
 cloud-calendar week                    # this week, Monday to Sunday; or `week 2026-10-20`
-cloud-calendar agenda --from tomorrow --days 14
+cloud-calendar agenda --from tomorrow --days 14   # 1 to 366 days
 cloud-calendar calendars               # calendar IDs, and which are read-only
 
 cloud-calendar event add --calendar icloud:home --title "Dentist" \

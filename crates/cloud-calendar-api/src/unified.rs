@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::config::Config;
 use crate::error::{Error, ErrorKind, Result};
-use crate::provider::{self, AccountStatus, AccountWarning, Provider};
+use crate::provider::{self, AccountStatus, AccountWarning, Provider, SeriesSupport};
 use crate::types::*;
 
 #[derive(Clone)]
@@ -108,6 +108,12 @@ impl Calendars {
             return Err(Error::bad_request("an event's title can't be empty"));
         }
         self.account_for(id)?.update(id, change)
+    }
+
+    /// What can be done here to the repeating event `id` belongs to, and the service's name.
+    pub fn series_support(&self, id: &str) -> Result<(SeriesSupport, String)> {
+        let a = self.account_for(id)?;
+        Ok((a.series_support(), a.label().to_string()))
     }
 
     pub fn delete(&self, id: &str) -> Result<()> {

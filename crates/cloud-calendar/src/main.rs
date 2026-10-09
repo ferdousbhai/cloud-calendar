@@ -131,8 +131,11 @@ fn run(command: Command) -> api::Result<Out> {
             Ok(out)
         }
         Command::Agenda(a) => {
+            if !(1..=366).contains(&a.days) {
+                return Err(Error::bad_request(format!("--days must be 1 to 366, not {}", a.days)));
+            }
             let from = api::time::parse_date(&a.from, today())?;
-            agenda(Range::days(from, a.days.clamp(1, 366)), format!("{} days from {from}", a.days))
+            agenda(Range::days(from, a.days), format!("{} days from {from}", a.days))
         }
         Command::Today => agenda(Range::days(today(), 1), format!("today, {}", today())),
         Command::Week { date } => {
@@ -250,6 +253,12 @@ fn event(e: EventCommand) -> api::Result<Out> {
         }
         EventCommand::Delete { id, yes } => {
             let series = provider::split_occurrence(id.split_once(':').map(|(_, l)| l).unwrap_or("")).1.is_some();
+            if series {
+                let (support, label) = c.series_support(&id)?;
+                if !support.delete {
+                    return Err(Error::bad_request(format!("{id} is a repeating {label} event, which Cloud Calendar can't delete; delete it in {label}")));
+                }
+            }
             if !yes {
                 let what = if series { "every occurrence of this repeating event" } else { "this event" };
                 return Err(Error::bad_request(format!("this deletes {what}; run again with --yes")));

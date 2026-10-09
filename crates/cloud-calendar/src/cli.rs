@@ -100,7 +100,7 @@ pub struct AgendaArgs {
     /// First day (YYYY-MM-DD, today, tomorrow, +N)
     #[arg(long, default_value = "today")]
     pub from: String,
-    /// How many days
+    /// How many days, 1 to 366
     #[arg(long, default_value_t = 7)]
     pub days: u32,
 }
@@ -109,9 +109,9 @@ pub struct AgendaArgs {
 pub enum EventCommand {
     /// Add an event. A date alone (2026-10-09) makes it all-day; a time (2026-10-09 14:00) makes it timed.
     Add(EventAddArgs),
-    /// Change an event; only the options given change. Occurrences of a repeating event change the whole series.
+    /// Change an event; only the options given change. An occurrence of a repeating Google event changes the whole series (not its time); repeating iCloud and HEY events can't be changed here.
     Edit(EventEditArgs),
-    /// Delete an event (an occurrence of a repeating event deletes the whole series)
+    /// Delete an event. An occurrence of a repeating Google or HEY event deletes the whole series; repeating iCloud events can't be deleted here.
     Delete {
         id: String,
         /// Confirm

@@ -371,6 +371,10 @@ impl Provider for Hey {
         let (target, _) = self.target(id)?;
         self.run(&Self::args(&["event", "delete", &target])).map(|_| ())
     }
+
+    fn series_support(&self) -> provider::SeriesSupport {
+        provider::SeriesSupport { edit: false, delete: true }
+    }
 }
 
 #[cfg(test)]

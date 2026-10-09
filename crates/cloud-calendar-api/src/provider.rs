@@ -43,6 +43,15 @@ impl AccountWarning {
     }
 }
 
+/// What can be done here to a repeating event (an occurrence's ID reaches its whole series).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeriesSupport {
+    /// Its title, location and notes can change (its time never can here).
+    pub edit: bool,
+    /// The whole series can be deleted.
+    pub delete: bool,
+}
+
 pub trait Provider: Send + Sync {
     /// The account's name, which prefixes its IDs ("icloud").
     fn name(&self) -> &str;
@@ -64,6 +73,10 @@ pub trait Provider: Send + Sync {
     fn create(&self, event: &NewEvent) -> Result<String>;
     fn update(&self, id: &str, change: &EventChange) -> Result<()>;
     fn delete(&self, id: &str) -> Result<()>;
+    /// What this provider can do to a repeating event here.
+    fn series_support(&self) -> SeriesSupport {
+        SeriesSupport { edit: true, delete: true }
+    }
 }
 
 /// Providers cloud-calendar knows how to link, for `account add` and its help.

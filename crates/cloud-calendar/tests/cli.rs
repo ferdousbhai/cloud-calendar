@@ -333,3 +333,12 @@ fn notifications_go_out_once() {
     assert_eq!(home.file("notify.log").lines().count(), 1);
     assert_eq!(weeks(&home), read, "the cache spared a second read");
 }
+
+#[test]
+fn agenda_days_must_be_in_range() {
+    let home = Home::new("days", true);
+    for days in ["0", "367"] {
+        let (v, code) = home.json(&["agenda", "--days", days], &[]);
+        assert_eq!((code, v["error"]["code"].as_str()), (2, Some("bad_request")), "{v}");
+    }
+}
