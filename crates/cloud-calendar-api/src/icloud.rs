@@ -47,7 +47,6 @@ use crate::error::{Error, ErrorKind, Result};
 use crate::provider::{self, AccountStatus, Provider};
 use crate::types::*;
 
-/// icloud-sessiond unreachable: not installed (D-Bus has no such service), or failing.
 /// What an icloud-session error means here, every case named so a new one is a compile error.
 /// `account` is the linked account's name, for the sign-in hint.
 pub fn session_error(e: icloud_session::Error, account: &str) -> Error {
@@ -70,6 +69,7 @@ pub fn session_error(e: icloud_session::Error, account: &str) -> Error {
     }
 }
 
+/// icloud-sessiond unreachable: not installed (D-Bus has no such service), or failing.
 pub fn service_error(message: &str) -> Error {
     if message.contains("org.freedesktop.DBus.Error.ServiceUnknown") {
         return Error::new(
