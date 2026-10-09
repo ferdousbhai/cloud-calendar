@@ -2,7 +2,7 @@
 # Install Cloud Calendar (the cloud-calendar CLI and the cloud-calendar-gtk app)
 # from its signed package repository, and keep it updating with the system:
 #
-#   curl -fsSL https://ferdousbhai.com/cloud-calendar/install.sh | sudo bash
+#   curl -fsSL https://github.com/ferdousbhai/cloud-calendar/releases/latest/download/install.sh | sudo bash
 #
 # Every step is idempotent, so re-running is safe. It trusts the
 # package-signing key (checked against the fingerprint pinned below), adds the
