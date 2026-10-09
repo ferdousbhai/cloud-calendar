@@ -208,16 +208,20 @@ added to `provider::open`.
 
 Cloud Calendar's Google sign-in is one OAuth client, `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in
 `crates/cloud-calendar-api/src/google.rs` (a desktop client's secret isn't secret). It is meant to
-be the client of cloud-mail's Google Cloud project, with in that project:
+be cloud-mail's "Desktop app" client, in cloud-mail's Google Cloud project, which has:
 
-- the **Google Calendar API** enabled;
-- on the OAuth consent screen, the scopes `https://www.googleapis.com/auth/calendar.events` and
-  `https://www.googleapis.com/auth/calendar.calendarlist.readonly` added (published "In
-  production", since test-mode sign-ins expire after 7 days);
-- an OAuth client of type "Desktop app".
+- the **Google Calendar API** enabled (done);
+- an OAuth consent screen published "In production" (test-mode sign-ins expire after 7 days).
 
-Until the constants are filled in, adding Google says sign-in isn't configured. A build can use its
-own client with `CLOUD_CALENDAR_GOOGLE_CLIENT_ID` / `CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET`.
+The calendar scopes (`https://www.googleapis.com/auth/calendar.events` and
+`https://www.googleapis.com/auth/calendar.calendarlist.readonly`) aren't listed on the consent
+screen. Sign-in works without that, with the same "Google hasn't verified this app" warning as
+Gmail's; listing them only matters for Google's app verification.
+
+The constants are empty in this repository, so adding Google currently says sign-in isn't
+configured. Fill them with cloud-mail's client (`crates/cloudmail-api/src/gmail.rs`) to turn it on.
+A build can also use its own client with `CLOUD_CALENDAR_GOOGLE_CLIENT_ID` /
+`CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET`.
 
 ### Releasing (maintainers)
 
