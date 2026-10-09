@@ -1,0 +1,7 @@
+[Unit]
+Description=Cloud Calendar: notify about events starting soon
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/cloud-calendar --quiet notify

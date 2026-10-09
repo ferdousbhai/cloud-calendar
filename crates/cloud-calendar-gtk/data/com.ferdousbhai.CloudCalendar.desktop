@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Cloud Calendar
+Comment=Your iCloud, Google and HEY calendars in one place
+Exec=cloud-calendar-gtk
+Icon=com.ferdousbhai.CloudCalendar
+Terminal=false
+Categories=Office;Calendar;
+Keywords=calendar;events;icloud;google;hey;
+StartupNotify=true
+StartupWMClass=com.ferdousbhai.CloudCalendar

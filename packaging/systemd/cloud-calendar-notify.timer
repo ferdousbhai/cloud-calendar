@@ -1,0 +1,10 @@
+[Unit]
+Description=Cloud Calendar: check for events starting soon, every minute
+PartOf=graphical-session.target
+
+[Timer]
+OnCalendar=*:*:00
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
