@@ -1,0 +1,13 @@
+[package]
+name = "cloud-calendar-gtk"
+description = "Native GTK4 app for Cloud Calendar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cloud-calendar-api.workspace = true
+chrono.workspace = true
+dirs.workspace = true
+toml.workspace = true
+gtk = { version = "0.11", package = "gtk4", features = ["v4_16"] }

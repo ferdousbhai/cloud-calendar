@@ -15,10 +15,16 @@ pub struct Calendars {
     pub broken: Vec<AccountWarning>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Listing<T> {
     pub items: Vec<T>,
     pub warnings: Vec<AccountWarning>,
+}
+
+impl<T> Default for Listing<T> {
+    fn default() -> Self {
+        Self { items: Vec::new(), warnings: Vec::new() }
+    }
 }
 
 impl Calendars {
