@@ -1,0 +1,29 @@
+#!/bin/bash
+# Verify exactly one published release on its native architecture. No automatic deletion.
+set -euo pipefail
+version=${1:?usage: bin/verify-release <version> [x86_64|aarch64]}
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid version' >&2; exit 1; }
+arch=${2:-$(uname -m)}
+case "$arch" in
+  x86_64) image=archlinux:base-devel; platform=linux/amd64 ;;
+  aarch64) image=${ARM_BUILD_IMAGE:?Set ARM_BUILD_IMAGE to a native Arch Linux ARM image}; platform=linux/arm64 ;;
+  *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
+esac
+[[ $(uname -m) == "$arch" ]] || { echo 'A native runner is required.' >&2; exit 1; }
+releases=https://github.com/ferdousbhai/cloud-calendar/releases/download/v$version
+docker run --rm --platform "$platform" -e EXPECTED_VERSION="$version" -e EXPECTED_ARCH="$arch" \
+  -e CLOUD_CALENDAR_RELEASES_URL="$releases" "$image" bash -euo pipefail -c '
+    [[ $(uname -m) == "$EXPECTED_ARCH" ]]
+    sed -i "/^\[options\]$/a DisableSandbox" /etc/pacman.conf
+    pacman-key --init
+    if [[ $EXPECTED_ARCH == aarch64 ]]; then pacman-key --populate archlinuxarm; else pacman-key --populate archlinux; fi
+    pacman -Syu --needed --noconfirm curl gnupg
+    curl --fail --location --retry 3 "$CLOUD_CALENDAR_RELEASES_URL/install.sh" -o /tmp/install.sh
+    bash /tmp/install.sh
+    [[ $(pacman -Q cloud-calendar | cut -d" " -f2) == "$EXPECTED_VERSION-1" ]]
+    [[ $(cloud-calendar --version) == "cloud-calendar $EXPECTED_VERSION" ]]
+    test -x /usr/bin/cloud-calendar-gtk
+    ldd /usr/bin/cloud-calendar-gtk > /tmp/gtk-libraries
+    ! grep -q "not found" /tmp/gtk-libraries
+    test -f /usr/lib/systemd/user/cloud-calendar-notify.timer
+  '

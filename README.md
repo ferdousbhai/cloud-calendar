@@ -24,15 +24,20 @@ own notification system. It is the calendar sibling of [cloud-mail](https://gith
 
 ## Install
 
-On Omarchy (x86_64 or aarch64), from a checkout:
+On Omarchy or Arch Linux (x86_64 and aarch64), from the signed package repository once a release
+is published:
 
 ```sh
-cd packaging/aur/cloud-calendar && makepkg -si
+curl -fsSL https://github.com/ferdousbhai/cloud-calendar/releases/latest/download/install.sh | sudo bash
+systemctl --user enable --now cloud-calendar-notify.timer   # event notifications
 ```
 
-The PKGBUILD builds a release tag. Until there is one, `cargo build --release` in the checkout builds
-`target/release/cloud-calendar` and `target/release/cloud-calendar-gtk`. iCloud calendars need
-icloud-session (from icloud-for-omarchy) installed; adding iCloud without it says so.
+The installer trusts the package-signing key (pinned by fingerprint, the same key cloud-mail and
+icloud-for-omarchy use), adds the `[cloud-calendar]` repository (`[cloud-calendar-aarch64]` on ARM)
+and installs the package; updates then arrive with `omarchy update`. Before the first release,
+`cargo build --release` in a checkout builds `target/release/cloud-calendar` and
+`target/release/cloud-calendar-gtk`. iCloud calendars need icloud-session (from
+icloud-for-omarchy) installed; adding iCloud without it says so.
 
 ## Link your calendars
 
@@ -60,7 +65,8 @@ whole series isn't established well enough to rely on. Use the Calendar app or i
 
 Google Calendar goes through Google's own [Workspace CLI `gws`](https://github.com/googleworkspace/cli),
 the way cloud-mail reaches Gmail, with one browser sign-in and no Google Cloud setup of your own:
-Cloud Calendar brings its own Google sign-in.
+Cloud Calendar brings its own Google sign-in. (Not yet in this build: until the built-in client is
+filled in, adding Google says sign-in isn't configured; see [Google sign-in](#google-sign-in-maintainers).)
 
 ```sh
 npm install -g @googleworkspace/cli
@@ -212,6 +218,23 @@ be the client of cloud-mail's Google Cloud project, with in that project:
 
 Until the constants are filled in, adding Google says sign-in isn't configured. A build can use its
 own client with `CLOUD_CALENDAR_GOOGLE_CLIENT_ID` / `CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET`.
+
+### Releasing (maintainers)
+
+Native CI (`.github/workflows/packages.yml`) builds and tests the package on x86_64 and aarch64
+runners for every push and pull request. To release version X.Y.Z, bump `version` in `Cargo.toml`
+and `pkgver` in `packaging/aur/cloud-calendar/PKGBUILD`, commit, then:
+
+```sh
+git tag -a vX.Y.Z -m "Cloud Calendar X.Y.Z" && git push origin main vX.Y.Z
+gh release create vX.Y.Z --draft --verify-tag --generate-notes
+bin/release X.Y.Z
+```
+
+`bin/release` waits for the tag's CI run, checks the artifacts' source commit and metadata, signs
+both packages and repository databases with the package-signing key (which must be in the local
+keyring; it never enters CI) and publishes the release. `verify-release.yml` then installs it from
+the one-liner on both architectures.
 
 ## License
 

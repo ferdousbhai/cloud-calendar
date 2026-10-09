@@ -958,7 +958,7 @@ dependencies = [
 [[package]]
 name = "icloud-session"
 version = "0.6.0"
-source = "git+https://github.com/ferdousbhai/icloud-for-omarchy?rev=78523242b9e4a613680fee75c4bb052049f728b0#78523242b9e4a613680fee75c4bb052049f728b0"
+source = "git+https://github.com/ferdousbhai/icloud-for-omarchy?rev=3d7df8200a06f07a3afd941a9d632955efbfd7b4#3d7df8200a06f07a3afd941a9d632955efbfd7b4"
 dependencies = [
  "futures-lite",
  "serde",

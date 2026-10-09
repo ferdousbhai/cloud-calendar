@@ -1,0 +1,71 @@
+#!/bin/bash
+# Publish native CI packages for both architectures, signed only in the local keyring.
+# Usage: bin/release <version> [native-package-workflow-run-id]
+set -euo pipefail
+cd "$(dirname "$0")/.."
+version=${1:?usage: bin/release <version> [native-package-workflow-run-id]}
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid version' >&2; exit 1; }
+tag=v$version
+gh_repo=ferdousbhai/cloud-calendar
+fingerprint=35C47A06567940B6796B4D0F9B3C7BDF85268B31
+step() { printf '\n==> %s\n' "$*"; }
+source_commit=$(git rev-parse "$tag^{commit}")
+cargo_version=$(git show "$source_commit:Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -1)
+[[ $cargo_version == "$version" ]] \
+  || { echo "Cargo.toml at $tag says version ${cargo_version:-<none>}, not $version." >&2; exit 1; }
+remote_commit=$(gh api "repos/$gh_repo/commits/$tag" --jq .sha)
+[[ $source_commit == "$remote_commit" ]] || { echo 'Local and remote tags disagree.' >&2; exit 1; }
+gpg --batch --list-secret-keys "$fingerprint" >/dev/null 2>&1 \
+  || { echo "The package-signing key $fingerprint is not in this keyring." >&2; exit 1; }
+gh release view "$tag" --repo "$gh_repo" >/dev/null \
+  || { echo "No GitHub release for $tag; draft one first (bin/release-on-tag does)." >&2; exit 1; }
+step "Waiting for native package CI for $tag"
+run=${2:-}
+if [[ -z $run ]]; then
+  for _ in {1..24}; do
+    run=$(gh run list --repo "$gh_repo" --workflow packages.yml --commit "$source_commit" --event push \
+      --json databaseId --jq '.[0].databaseId // empty')
+    [[ -z $run ]] || break
+    sleep 5
+  done
+fi
+[[ $run =~ ^[0-9]+$ ]] || { echo 'No package workflow run found.' >&2; exit 1; }
+gh run watch "$run" --repo "$gh_repo" --exit-status
+run_info=$(gh run view "$run" --repo "$gh_repo" --json headSha,event,conclusion,workflowName \
+  --jq '[.headSha,.event,.conclusion,.workflowName] | @tsv')
+[[ $run_info == "$source_commit"$'\tpush\tsuccess\tNative packages' ]] \
+  || { echo 'CI must be a successful Native packages push run for the exact release commit.' >&2; exit 1; }
+mkdir -p target
+out=$(mktemp -d "$PWD/target/release-repo-$version.XXXXXX")
+mkdir "$out/assets"
+for arch in x86_64 aarch64; do
+  gh run download "$run" --repo "$gh_repo" --name "cloud-calendar-$arch" --dir "$out/$arch"
+  [[ $(cat "$out/$arch/source-commit.txt") == "$source_commit" ]] || { echo 'Artifact source commit mismatch.' >&2; exit 1; }
+  package="$out/$arch/cloud-calendar-$version-1-$arch.pkg.tar.zst"
+  info=$(bsdtar -xOf "$package" .PKGINFO)
+  for field in 'pkgname = cloud-calendar' "pkgver = $version-1" "arch = $arch"; do
+    grep -qxF "$field" <<< "$info" || { echo "Invalid package metadata: $field" >&2; exit 1; }
+  done
+  cp "$package" "$out/assets/"
+done
+# Validate both packages before requesting any signature or touching the draft release.
+cd "$out/assets"
+for arch in x86_64 aarch64; do
+  repo=cloud-calendar
+  [[ $arch == x86_64 ]] || repo=cloud-calendar-aarch64
+  package="cloud-calendar-$version-1-$arch.pkg.tar.zst"
+  gpg --local-user "$fingerprint" --detach-sign "$package"
+  gpg --verify "$package.sig" "$package"
+  repo-add --sign --key "$fingerprint" --verify "$repo.db.tar.gz" "$package"
+  for f in "$repo.db" "$repo.db.sig" "$repo.files" "$repo.files.sig"; do
+    cp --remove-destination "$(readlink -f "$f")" "$f"
+  done
+  gpg --armor --export "$fingerprint" > "$repo-signing-key.asc"
+done
+git -C "$OLDPWD" show "$source_commit:packaging/repo/install.sh" > install.sh
+step "Uploading both signed repositories to $tag"
+gh release upload "$tag" --repo "$gh_repo" --clobber ./*
+if [[ $(gh release view "$tag" --repo "$gh_repo" --json isDraft --jq .isDraft) == true ]]; then
+  gh release edit "$tag" --repo "$gh_repo" --draft=false --latest
+fi
+printf 'Published both architectures. Verify on native hosts with bin/verify-release %s <architecture>.\n' "$version"
