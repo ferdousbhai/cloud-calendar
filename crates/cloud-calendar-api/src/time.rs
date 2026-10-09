@@ -56,9 +56,16 @@ pub fn parse_time(s: &str, today: NaiveDate) -> Result<Time> {
     if let Some(t) = parse_clock(s) {
         return local_instant(today, t).map(Time::At);
     }
-    let (day, clock) = match s.split_once(['T', ' ']) {
-        Some((d, c)) => (d, Some(c.trim())),
-        None => (s, None),
+    // `T` separates only after a YYYY-MM-DD date (`2026-10-10T14:00`); a space anywhere
+    // (`Tomorrow 14:00`), so a word with a T in it is never split.
+    let iso_t = s.len() > 10 && s.as_bytes()[10].eq_ignore_ascii_case(&b'T') && NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d").is_ok();
+    let (day, clock) = if iso_t {
+        (&s[..10], Some(s[11..].trim()))
+    } else {
+        match s.split_once(' ') {
+            Some((d, c)) => (d, Some(c.trim())),
+            None => (s, None),
+        }
     };
     let date = parse_date(day, today)?;
     match clock {
@@ -142,5 +149,8 @@ mod tests {
         assert_eq!(parse_time("2026-10-10T12:00:00Z", day(9)).unwrap(), Time::At(Utc.with_ymd_and_hms(2026, 10, 10, 12, 0, 0).unwrap()));
         assert_eq!(parse_time("09:30", day(9)).unwrap().local_date(), day(9));
         assert!(parse_time("2026-10-10 25:00", day(9)).is_err());
+        assert_eq!(parse_time("Tomorrow", day(9)).unwrap(), Time::Date(day(10)));
+        assert_eq!(parse_time("Today 14:00", day(9)).unwrap().local_date(), day(9));
+        assert_eq!(parse_time("TOMORROW 14:00", day(9)).unwrap(), at);
     }
 }

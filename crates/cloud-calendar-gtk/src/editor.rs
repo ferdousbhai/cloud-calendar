@@ -80,6 +80,9 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     let Some(cals) = ui.calendars.borrow().clone() else { return };
     let win = gtk::Window::builder().title(if event.is_some() { "Event" } else { "New event" }).transient_for(&ui.window).modal(true).default_width(520).build();
     win.add_css_class("editor");
+    // While a save or delete runs, the editor stays open: closing it would hide the outcome.
+    let busy = Rc::new(std::cell::Cell::new(false));
+    win.connect_close_request(glib::clone!(#[strong] busy, move |_| if busy.get() { glib::Propagation::Stop } else { glib::Propagation::Proceed }));
     let grid = gtk::Grid::builder().row_spacing(8).column_spacing(10).build();
     grid.add_css_class("editor");
 
@@ -228,11 +231,16 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     win.set_child(Some(&grid));
 
     // Runs an account call off the main thread; closes the editor and reloads on success.
-    let run = Rc::new(glib::clone!(#[weak] ui, #[weak] win, #[weak] error, #[weak] save, move |job: Box<dyn FnOnce() -> api::Result<()> + Send>| {
-        save.set_sensitive(false);
+    let run = Rc::new(glib::clone!(#[weak] ui, #[weak] win, #[weak] error, #[weak] save, #[weak] cancel, #[weak] delete, #[strong] busy, move |job: Box<dyn FnOnce() -> api::Result<()> + Send>| {
+        busy.set(true);
+        for b in [&save, &cancel, &delete] {
+            b.set_sensitive(false);
+        }
         error.set_text("Saving…");
+        let busy = busy.clone();
         glib::MainContext::default().spawn_local(async move {
             let result = gio::spawn_blocking(job).await.unwrap_or_else(|_| Err(api::Error::new(api::ErrorKind::AccountUnavailable, "failed unexpectedly")));
+            busy.set(false);
             match result {
                 Ok(()) => {
                     win.close();
@@ -240,7 +248,9 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
                 }
                 Err(e) => {
                     error.set_text(&e.message);
-                    save.set_sensitive(true);
+                    save.set_sensitive(can_edit);
+                    cancel.set_sensitive(true);
+                    delete.set_sensitive(can_delete);
                 }
             }
         });

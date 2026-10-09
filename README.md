@@ -90,9 +90,9 @@ HEY reads by week, over the calendars switched on in HEY. Moving a HEY event nee
 start and its new end, because the CLI can't read one event back to keep its length. Events can't
 be added to HEY's personal calendar (HEY refuses them there), so it shows as read-only.
 
-Editing a HEY event, even just its title, removes its countdown and flattens its notes' formatting:
-HEY's CLI resends the whole event, and HEY serves notes back as plain text and countdowns not at
-all. The editor says so before you save, and `cloud-calendar event edit` adds an
+Editing a HEY event, even just its title, removes its countdown, flattens its notes' formatting and
+detaches an attached email you can't read: HEY's CLI resends the whole event, and HEY serves notes
+back as plain text and countdowns and such emails not at all. The editor says so before you save, and `cloud-calendar event edit` adds an
 `edit_side_effects` warning to its output.
 
 ### Where sign-ins live

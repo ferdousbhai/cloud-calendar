@@ -374,9 +374,10 @@ impl Provider for Hey {
     }
 
     /// hey 1.7 resends the whole event on any edit (HEY clears what a write leaves out): HEY
-    /// serves notes back as plain text and no countdown at all (`hey event edit --help`).
+    /// serves notes back as plain text, no countdown at all, and no attached email you can't read
+    /// (`hey event edit --help`).
     fn edit_caveat(&self) -> Option<&'static str> {
-        Some("editing a HEY event removes its countdown and flattens its notes' formatting (HEY's CLI resends the whole event)")
+        Some("editing a HEY event removes its countdown, flattens its notes' formatting and detaches an attached email you can't read (HEY's CLI resends the whole event)")
     }
 
     fn series_support(&self) -> provider::SeriesSupport {

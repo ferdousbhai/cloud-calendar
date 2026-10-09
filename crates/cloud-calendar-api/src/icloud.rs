@@ -66,12 +66,30 @@ pub struct ICloud {
 /// The local time zone's IANA name and zone: `TZ` when set (as for every other program),
 /// else the system's.
 pub fn zone() -> Result<(String, Tz)> {
-    let name = match std::env::var("TZ").ok().map(|t| t.trim_start_matches(':').to_string()).filter(|t| !t.is_empty()) {
-        Some(t) => t,
-        None => iana_time_zone::get_timezone().map_err(|e| Error::new(ErrorKind::Config, format!("this computer's time zone is unknown ({e})")))?,
+    let system = || iana_time_zone::get_timezone().map_err(|e| Error::new(ErrorKind::Config, format!("this computer's time zone is unknown ({e})")));
+    let name = match std::env::var("TZ").ok().as_deref().and_then(tz_name) {
+        Some(name) => name,
+        // TZ unset, or a value with no IANA name in it (POSIX rules such as `EST5EDT`): the
+        // system's own zone, as the C library falls back to.
+        None => system()?,
     };
     let tz: Tz = name.parse().map_err(|_| Error::new(ErrorKind::Config, format!("\"{name}\" isn't a known time zone (an IANA name such as Europe/London)")))?;
     Ok((name, tz))
+}
+
+/// The IANA name a `TZ` value names, as the C library reads it: a leading `:` is dropped, a path
+/// names the zone after `zoneinfo/` (a link such as /etc/localtime is followed for it), and a
+/// bare value counts only if it is an IANA name.
+pub fn tz_name(value: &str) -> Option<String> {
+    let v = value.trim().trim_start_matches(':');
+    if v.is_empty() {
+        return None;
+    }
+    if v.starts_with('/') {
+        let named = |p: &str| p.split_once("zoneinfo/").map(|(_, name)| name.to_string()).filter(|n| n.parse::<Tz>().is_ok());
+        return named(v).or_else(|| named(&std::fs::canonicalize(v).ok()?.to_string_lossy()));
+    }
+    v.parse::<Tz>().is_ok().then(|| v.to_string())
 }
 
 /// Apple's date array for a wall-clock time.
@@ -408,6 +426,17 @@ impl Provider for ICloud {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn tz_values_resolve_like_the_c_library() {
+        assert_eq!(tz_name("Europe/London").as_deref(), Some("Europe/London"));
+        assert_eq!(tz_name(":Europe/London").as_deref(), Some("Europe/London"));
+        assert_eq!(tz_name(":/usr/share/zoneinfo/Europe/London").as_deref(), Some("Europe/London"));
+        // POSIX rules and nonsense have no IANA name: the system zone is used instead.
+        assert_eq!(tz_name("EST5EDT,M3.2.0,M11.1.0"), None);
+        assert_eq!(tz_name(""), None);
+    }
+
     use super::*;
 
     #[test]
