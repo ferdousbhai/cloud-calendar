@@ -17,4 +17,4 @@ serde_json.workspace = true
 clap = { version = "4", features = ["derive", "wrap_help", "env"] }
 
 [dev-dependencies]
-base64.workspace = true
+zbus.workspace = true

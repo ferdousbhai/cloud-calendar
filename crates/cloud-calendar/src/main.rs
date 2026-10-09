@@ -54,7 +54,7 @@ impl Out {
 fn exit_code(kind: ErrorKind) -> i32 {
     match kind {
         ErrorKind::BadRequest => 2,
-        ErrorKind::Config | ErrorKind::AccountAuth => 3,
+        ErrorKind::Config | ErrorKind::AccountAuth | ErrorKind::KeyringUnavailable => 3,
         ErrorKind::NotFound => 4,
         ErrorKind::AccountUnavailable => 5,
     }
@@ -181,51 +181,23 @@ fn status() -> api::Result<Out> {
     Ok(out)
 }
 
-fn read_password(from_stdin: bool, prompt: &str) -> api::Result<String> {
-    let mut password = String::new();
-    if from_stdin || !std::io::stdin().is_terminal() {
-        std::io::stdin().read_to_string(&mut password).map_err(|e| Error::bad_request(format!("could not read the password: {e}")))?;
-    } else {
+/// A secret from stdin: asked for without echo on a terminal, else read whole.
+fn read_secret(prompt: &str) -> api::Result<String> {
+    let mut secret = String::new();
+    if std::io::stdin().is_terminal() {
         eprint!("{prompt}");
         let _ = std::io::stderr().flush();
         let tty = || std::fs::File::open("/dev/tty").map(std::process::Stdio::from);
         let echo = |on: bool| tty().map(|t| std::process::Command::new("stty").arg(if on { "echo" } else { "-echo" }).stdin(t).status());
         let _ = echo(false);
-        let r = std::io::stdin().read_line(&mut password);
+        let r = std::io::stdin().read_line(&mut secret);
         let _ = echo(true);
         eprintln!();
-        r.map_err(|e| Error::bad_request(format!("could not read the password: {e}")))?;
+        r.map_err(|e| Error::bad_request(format!("could not read it: {e}")))?;
+    } else {
+        std::io::stdin().read_to_string(&mut secret).map_err(|e| Error::bad_request(format!("could not read it: {e}")))?;
     }
-    let password = password.trim().to_string();
-    if password.is_empty() {
-        return Err(Error::bad_request("no password given"));
-    }
-    Ok(password)
-}
-
-/// Checks an iCloud app-specific password against Apple and keeps it in the keyring.
-fn icloud_sign_in(name: &str, cfg: &config::AccountConfig, from_stdin: bool) -> api::Result<String> {
-    let user = cfg.username.clone().ok_or_else(|| Error::bad_request("iCloud needs --username <your Apple Account email>"))?;
-    eprintln!("Make an app-specific password at https://account.apple.com (Sign-In and Security → App-Specific Passwords).");
-    let password = read_password(from_stdin, &format!("App-specific password for {user}: "))?;
-    let n = api::caldav::ICloud::new(name, cfg).verify(&password)?;
-    api::secret::store(name, &user, &format!("Cloud Calendar: iCloud ({user})"), &password)?;
-    Ok(format!("signed in to iCloud as {user} ({n} calendars)"))
-}
-
-fn sign_in(name: &str, cfg: &config::AccountConfig, from_stdin: bool) -> api::Result<String> {
-    match cfg.provider(name) {
-        "icloud" => icloud_sign_in(name, cfg, from_stdin),
-        "google" => api::google::Google::new(name, cfg).login().map(|_| "signed in to Google".to_string()),
-        "hey" => {
-            let hey = api::hey::Hey::new(name, cfg);
-            if hey.signed_in()? {
-                return Ok("the hey CLI is signed in".into());
-            }
-            hey.login().map(|_| "signed in to HEY".to_string())
-        }
-        other => Err(Error::new(ErrorKind::Config, format!("unknown provider {other}"))),
-    }
+    Ok(secret.trim().to_string())
 }
 
 fn account(a: AccountCommand) -> api::Result<Out> {
@@ -239,56 +211,32 @@ fn account(a: AccountCommand) -> api::Result<Out> {
             Ok(out)
         }
         AccountCommand::Add(args) => {
-            if !provider::KNOWN_PROVIDERS.iter().any(|(p, _)| *p == args.provider) {
-                let known: Vec<_> = provider::KNOWN_PROVIDERS.iter().map(|(p, d)| format!("{p} ({d})")).collect();
-                return Err(Error::bad_request(format!("unknown provider \"{}\"; one of: {}", args.provider, known.join(", "))));
-            }
-            let name = args.name.clone().unwrap_or_else(|| args.provider.clone());
-            if !provider::valid_name(&name) {
-                return Err(Error::bad_request(format!("\"{name}\" can't be an account name: use lowercase letters, digits and dashes")));
-            }
-            let mut config = config::load()?;
-            if config.accounts.contains_key(&name) {
-                return Err(Error::bad_request(format!("an account named {name} is already linked; pick another --name, or `cloud-calendar account login {name}`")));
-            }
-            if args.provider == "icloud" && args.username.as_deref().is_none_or(|u| !u.contains('@')) {
-                return Err(Error::bad_request("iCloud needs --username <your Apple Account email>"));
-            }
-            let cfg = config::AccountConfig {
-                provider: (name != args.provider).then(|| args.provider.clone()),
-                command: args.command,
-                account: args.hey_account,
-                username: args.username,
-                url: args.url,
-                client_id: args.client_id,
-                client_secret: args.client_secret,
+            let link = match args.provider.as_str() {
+                "icloud" => api::accounts::Link::ICloud,
+                "google" => {
+                    let client_id = args.client_id.clone().ok_or_else(|| Error::bad_request("Google needs --client-id <OAuth client ID>"))?;
+                    let client_secret = read_secret("OAuth client secret: ")?;
+                    api::accounts::Link::Google { client_id, client_secret }
+                }
+                "hey" => api::accounts::Link::Hey { account: args.hey_account.clone() },
+                other => {
+                    let known: Vec<_> = provider::KNOWN_PROVIDERS.iter().map(|(p, d)| format!("{p} ({d})")).collect();
+                    return Err(Error::bad_request(format!("unknown provider \"{other}\"; one of: {}", known.join(", "))));
+                }
             };
-            let note = if args.no_login { "saved without signing in".to_string() } else { sign_in(&name, &cfg, args.password_stdin)? };
-            config.accounts.insert(name.clone(), cfg);
-            let path = config::save(&config)?;
-            Ok(Out::new(json!({ "name": name, "config": path }), format!("linked {name}: {note}")))
+            let (name, note) = api::accounts::add(args.name.as_deref(), link)?;
+            Ok(Out::new(json!({ "name": name, "config": config::path() }), format!("linked {name}: {note}")))
         }
-        AccountCommand::Login { name, password_stdin } => {
-            let config = config::load()?;
-            let cfg = config.accounts.get(&name).ok_or_else(|| Error::new(ErrorKind::NotFound, format!("no account named {name}")))?;
-            let note = sign_in(&name, cfg, password_stdin)?;
+        AccountCommand::Login { name } => {
+            let note = api::accounts::login(&name)?;
             Ok(Out::new(json!({ "name": name }), note))
         }
         AccountCommand::Remove { name, yes } => {
             if !yes {
-                return Err(Error::bad_request(format!("removing {name} forgets its sign-in on this computer; run again with --yes")));
+                return Err(Error::bad_request(format!("removing {name} forgets what Cloud Calendar kept for it; run again with --yes")));
             }
-            let mut config = config::load()?;
-            let cfg = config.accounts.remove(&name).ok_or_else(|| Error::new(ErrorKind::NotFound, format!("no account named {name}")))?;
-            match cfg.provider(&name) {
-                "icloud" => api::secret::clear(&name)?,
-                "google" => {
-                    let _ = api::google::Google::new(&name, &cfg).forget();
-                }
-                _ => {}
-            }
-            config::save(&config)?;
-            Ok(Out::new(json!({ "name": name }), format!("unlinked {name}; its calendars are untouched")))
+            let note = api::accounts::remove(&name)?;
+            Ok(Out::new(json!({ "name": name }), note))
         }
     }
 }

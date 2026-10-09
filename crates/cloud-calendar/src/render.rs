@@ -21,7 +21,7 @@ pub fn calendars(list: &[Calendar]) -> String {
 
 pub fn accounts(list: &[AccountStatus], broken: &[AccountWarning]) -> String {
     if list.is_empty() && broken.is_empty() {
-        return "No accounts linked. Add one with `cloud-calendar account add icloud --username you@icloud.com`, `… add google` or `… add hey`.".into();
+        return "No accounts linked. Add one with `cloud-calendar account add icloud`, `… add google --client-id <id>` or `… add hey`, or under Accounts in the app.".into();
     }
     let mut out = String::new();
     for s in list {

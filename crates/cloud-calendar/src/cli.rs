@@ -5,9 +5,9 @@ use clap::{Args, Parser, Subcommand};
     name = "cloud-calendar",
     version,
     about = "Your iCloud, Google and HEY calendars in one place, from the terminal",
-    long_about = "cloud-calendar reads and changes events across linked calendar accounts: iCloud (CalDAV), Google (through `gws`) and HEY (through `hey`).\n\
+    long_about = "cloud-calendar reads and changes events across linked calendar accounts: iCloud (through icloud-session), Google (through `gws`) and HEY (through `hey`).\n\
                   Output is human-readable on a terminal and a JSON envelope {ok, data, summary, meta} when piped.\n\
-                  Exit codes: 0 ok, 1 other failure, 2 invalid request, 3 not signed in or not configured, 4 not found, 5 an account is unreachable.",
+                  Exit codes: 0 ok, 1 other failure, 2 invalid request, 3 not signed in, not configured or no keyring, 4 not found, 5 an account is unreachable.",
     disable_help_subcommand = true
 )]
 pub struct Cli {
@@ -70,16 +70,11 @@ pub enum Command {
 pub enum AccountCommand {
     /// List linked accounts and whether they work
     List,
-    /// Link an account: icloud, google or hey
+    /// Link an account and sign in: icloud, google or hey
     Add(AddArgs),
-    /// Sign in again (iCloud: a new app-specific password; Google and HEY: the browser sign-in)
-    Login {
-        name: String,
-        /// iCloud: read the app-specific password from stdin instead of asking
-        #[arg(long)]
-        password_stdin: bool,
-    },
-    /// Unlink an account and forget its sign-in on this computer
+    /// Sign in to a linked account again
+    Login { name: String },
+    /// Unlink an account and forget what Cloud Calendar kept for it
     Remove {
         name: String,
         /// Confirm
@@ -90,35 +85,18 @@ pub enum AccountCommand {
 
 #[derive(Args, Debug)]
 pub struct AddArgs {
-    /// icloud, google or hey
+    /// icloud (icloud-session's sign-in), google or hey
     pub provider: String,
     /// The account's name, which prefixes its IDs (default: the provider)
     #[arg(long)]
     pub name: Option<String>,
-    /// iCloud: your Apple Account email
-    #[arg(long)]
-    pub username: Option<String>,
-    /// iCloud: read the app-specific password from stdin instead of asking
-    #[arg(long)]
-    pub password_stdin: bool,
-    /// The provider's CLI (`gws`, `hey`) when it isn't on PATH under that name
-    #[arg(long)]
-    pub command: Option<String>,
-    /// iCloud: another CalDAV server (default https://caldav.icloud.com)
-    #[arg(long)]
-    pub url: Option<String>,
-    /// Google: OAuth client ID (Desktop app, Calendar API enabled)
+    /// Google: the OAuth client ID (Desktop app, Google Calendar API enabled); its secret is
+    /// asked for, or read from stdin, and kept in the keyring
     #[arg(long)]
     pub client_id: Option<String>,
-    /// Google: OAuth client secret
-    #[arg(long)]
-    pub client_secret: Option<String>,
     /// HEY: the hey CLI's linked-account selector
     #[arg(long)]
     pub hey_account: Option<String>,
-    /// Save the account without signing in now
-    #[arg(long)]
-    pub no_login: bool,
 }
 
 #[derive(Args, Debug)]
