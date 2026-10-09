@@ -43,6 +43,15 @@ impl AccountWarning {
     }
 }
 
+/// What can be done here to a repeating event (an occurrence's ID reaches its whole series).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeriesSupport {
+    /// Its title, location and notes can change (its time never can here).
+    pub edit: bool,
+    /// The whole series can be deleted.
+    pub delete: bool,
+}
+
 pub trait Provider: Send + Sync {
     /// The account's name, which prefixes its IDs ("icloud").
     fn name(&self) -> &str;
@@ -62,8 +71,18 @@ pub trait Provider: Send + Sync {
     fn events(&self, range: &Range) -> Result<Vec<Event>>;
     /// Adds an event; returns its ID.
     fn create(&self, event: &NewEvent) -> Result<String>;
-    fn update(&self, id: &str, change: &EventChange) -> Result<()>;
+    /// Changes an event; returns its ID afterwards, which may differ (a HEY event's carries the day
+    /// it starts on).
+    fn update(&self, id: &str, change: &EventChange) -> Result<String>;
     fn delete(&self, id: &str) -> Result<()>;
+    /// What this provider can do to a repeating event here.
+    fn series_support(&self) -> SeriesSupport {
+        SeriesSupport { edit: true, delete: true }
+    }
+    /// What any edit does beyond the change asked for, said before and after one.
+    fn edit_caveat(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// Providers cloud-calendar knows how to link, for `account add` and its help.
@@ -127,9 +146,10 @@ pub(crate) fn changed_span(change: &EventChange, start: Time, end: Time) -> Resu
     let (s, e) = (change.start.unwrap_or(start), change.end.unwrap_or(end));
     // A new start alone keeps the event's length.
     let e = if change.start.is_some() && change.end.is_none() && s.is_date() == start.is_date() {
+        let out = || Error::bad_request("the new end is out of range");
         match (start, end, s) {
-            (Time::At(a), Time::At(b), Time::At(n)) => Time::At(n + (b - a)),
-            (Time::Date(a), Time::Date(b), Time::Date(n)) => Time::Date(n + (b - a)),
+            (Time::At(a), Time::At(b), Time::At(n)) => Time::At(n.checked_add_signed(b - a).ok_or_else(out)?),
+            (Time::Date(a), Time::Date(b), Time::Date(n)) => Time::Date(n.checked_add_signed(b - a).ok_or_else(out)?),
             _ => e,
         }
     } else {

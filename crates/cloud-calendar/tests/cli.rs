@@ -250,25 +250,41 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     assert_eq!(code, 0, "HEY_NO_KEYRING never reaches hey: {v}");
 
     let (v, code) = home.json(&["event", "add", "--calendar", "hey:11", "--title", "Dinner", "--start", "2026-10-15 19:00", "--end", "2026-10-15 21:00", "--notes", "bring wine"], &[]);
-    assert_eq!((code, v["data"]["id"].as_str()), (0, Some("hey:777")), "{v}");
-    let (v, code) = home.json(&["event", "add", "--calendar", "hey:11", "--title", "Away", "--start", "2026-10-20", "--end", "2026-10-23"], &[]);
+    assert_eq!((code, v["data"]["id"].as_str()), (0, Some("hey:777@2026-10-15")), "{v}");
+    let (v, code) = home.json(&["event", "add", "--calendar", "hey:11", "--title=-Away", "--start", "2026-10-20", "--end", "2026-10-23"], &[]);
     assert_eq!(code, 0, "{v}");
     let (v, code) = home.json(&["event", "edit", "hey:500~20261013T060000Z", "--title", "Gym!"], &[]);
-    assert_eq!(code, 0, "{v}");
-    let (v, code) = home.json(&["event", "edit", "hey:401", "--start", "2026-10-14 13:00"], &[]);
+    assert_eq!(code, 2, "a repeating HEY event is read-only: {v}");
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--start", "2026-10-14 13:00"], &[]);
     assert_eq!(code, 2, "a HEY move names both ends: {v}");
-    let (v, code) = home.json(&["event", "edit", "hey:401", "--start", "2026-10-14 13:00", "--end", "2026-10-14 14:30", "--location", ""], &[]);
-    assert_eq!(code, 0, "{v}");
+    // Without the day it starts on, hey looks only a year either side of today: its error and
+    // hint come through (hey writes them to stderr).
+    let (v, code) = home.json(&["event", "edit", "hey:403", "--title", "Far"], &[]);
+    assert_eq!(code, 4, "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("event \"403\" not found (hey event edit 403 <YYYY-MM-DD>"), "{v}");
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--title", "Lunch!"], &[]);
+    assert_eq!((code, v["data"]["id"].as_str()), (0, Some("hey:401@2026-10-14")), "{v}");
+    // A move to another day returns the ID that carries the new day, and the next edit uses it.
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--start", "2026-10-20 13:00", "--end", "2026-10-20 14:30", "--location", ""], &[]);
+    assert_eq!((code, v["data"]["id"].as_str()), (0, Some("hey:401@2026-10-20")), "{v}");
+    assert_eq!(v["meta"]["warnings"][0]["code"], "edit_side_effects", "a HEY edit says what it drops: {v}");
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-20", "--title", "Lunch moved"], &[]);
+    assert_eq!(code, 0, "the returned ID finds the moved event: {v}");
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--title", "Stale"], &[]);
+    assert_eq!(code, 4, "the old day no longer finds it: {v}");
     let (v, code) = home.json(&["event", "delete", "hey:500~20261013T060000Z", "--yes"], &[]);
     assert_eq!(code, 0, "{v}");
     let writes: Vec<String> = home.file("hey.log").lines().filter(|l| l.starts_with("event\t")).map(str::to_string).collect();
     assert_eq!(
         writes,
         vec![
-            "event\tadd\tDinner\t--calendar\t11\t--starts-on\t2026-10-15\t--start-time\t19:00\t--ends-on\t2026-10-15\t--end-time\t21:00\t--notes\tbring wine",
-            "event\tadd\tAway\t--calendar\t11\t--all-day\t--starts-on\t2026-10-20\t--ends-on\t2026-10-22",
-            "event\tedit\t500\t--title\tGym!",
-            "event\tedit\t401\t--location\t\t--all-day=false\t--starts-on\t2026-10-14\t--start-time\t13:00\t--ends-on\t2026-10-14\t--end-time\t14:30",
+            "event\tadd\t--title=Dinner\t--calendar\t11\t--time-zone\tUTC\t--starts-on\t2026-10-15\t--start-time\t19:00\t--ends-on\t2026-10-15\t--end-time\t21:00\t--notes\tbring wine",
+            "event\tadd\t--title=-Away\t--calendar\t11\t--all-day\t--starts-on\t2026-10-20\t--ends-on\t2026-10-22",
+            "event\tedit\t403\t--title=Far",
+            "event\tedit\t401\t2026-10-14\t--title=Lunch!",
+            "event\tedit\t401\t2026-10-14\t--location\t\t--time-zone\tUTC\t--all-day=false\t--starts-on\t2026-10-20\t--start-time\t13:00\t--ends-on\t2026-10-20\t--end-time\t14:30",
+            "event\tedit\t401\t2026-10-20\t--title=Lunch moved",
+            "event\tedit\t401\t2026-10-14\t--title=Stale",
             "event\tdelete\t500",
         ]
     );
@@ -294,12 +310,14 @@ fn accounts_merge_into_one_agenda() {
             "icloud:home/standup~20261013T080000Z",
             "google:me@gmail.com/g1",
             "icloud:home/dentist",
-            "hey:401",
-            "hey:402",
+            "hey:401@2026-10-14",
+            "hey:402@2026-10-15",
             "icloud:home/trip",
         ]
     );
-    let trip = v["data"].as_array().unwrap().iter().find(|e| e["id"] == "hey:402").unwrap();
+    let lunch = v["data"].as_array().unwrap().iter().find(|e| e["id"] == "hey:401@2026-10-14").unwrap();
+    assert_eq!(lunch["notes"], "Bring the menu", "a HEY event's notes are its description");
+    let trip = v["data"].as_array().unwrap().iter().find(|e| e["id"] == "hey:402@2026-10-15").unwrap();
     assert_eq!((trip["start"].as_str(), trip["end"].as_str()), (Some("2026-10-15"), Some("2026-10-16")), "ending at midnight, a one-day event");
     assert!(!v.to_string().contains("Should not show"), "calendars hidden in Google aren't read");
 
@@ -333,4 +351,46 @@ fn notifications_go_out_once() {
     assert_eq!((v["data"]["sent"].as_array().unwrap().len(), v["data"]["refreshed"].as_bool()), (0, Some(false)));
     assert_eq!(home.file("notify.log").lines().count(), 1);
     assert_eq!(weeks(&home), read, "the cache spared a second read");
+}
+
+#[test]
+fn agenda_days_must_be_in_range() {
+    let home = Home::new("days", true);
+    for days in ["0", "367"] {
+        let (v, code) = home.json(&["agenda", "--days", days], &[]);
+        assert_eq!((code, v["error"]["code"].as_str()), (2, Some("bad_request")), "{v}");
+    }
+}
+
+#[test]
+fn out_of_range_dates_and_lengths_are_refused() {
+    let home = Home::new("ranges", true);
+    home.config("[accounts.hey]\n");
+    for args in [
+        &["agenda", "--from", "+999999999999"][..],
+        &["agenda", "--from", "+99999999999999999999"],
+        &["week", "+999999999999"],
+        &["event", "add", "--calendar", "hey:11", "--title", "X", "--start", "2026-10-15 09:00", "--length", "100000000d"],
+        &["event", "add", "--calendar", "hey:11", "--title", "X", "--start", "2026-10-15 09:00", "--length", "1000000000000000m"],
+        &["event", "add", "--calendar", "hey:11", "--title", "X", "--start", "9999-12-31 23:30", "--length", "1h"],
+    ] {
+        let (v, code) = home.json(args, &[]);
+        assert_eq!((code, v["error"]["code"].as_str()), (2, Some("bad_request")), "{args:?}: {v}");
+    }
+}
+
+#[test]
+fn accounts_linked_at_once_both_stay() {
+    let home = Home::new("race", true);
+    std::thread::scope(|s| {
+        // The first add's sign-in is slow; the second links meanwhile.
+        let slow = s.spawn(|| home.json(&["account", "add", "hey", "--name", "slow"], &[("FAKE_HEY_STATUS_DELAY", "2")]));
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let (v, code) = home.json(&["account", "add", "hey", "--name", "quick"], &[]);
+        assert_eq!(code, 0, "{v}");
+        let (v, code) = slow.join().unwrap();
+        assert_eq!(code, 0, "{v}");
+    });
+    let config = home.file("config/cloud-calendar/config.toml");
+    assert!(config.contains("[accounts.slow]") && config.contains("[accounts.quick]"), "{config}");
 }

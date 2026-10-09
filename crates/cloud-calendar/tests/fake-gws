@@ -19,9 +19,9 @@ params=""
 for ((i=1; i<=$#; i++)); do [[ "${!i}" == "--params" ]] && { j=$((i+1)); params="${!j}"; }; done
 case "$2 $3" in
   "calendarList list")
-    echo '{"items":[{"id":"me@gmail.com","summary":"me@gmail.com","summaryOverride":"Me","backgroundColor":"#16a765","accessRole":"owner","primary":true},
-                    {"id":"hidden@group.calendar.google.com","summary":"Hidden","accessRole":"owner","selected":false},
-                    {"id":"en.usa#holiday@group.v.calendar.google.com","summary":"Holidays","accessRole":"reader"}]}' ;;
+    echo '{"items":[{"id":"me@gmail.com","summary":"me@gmail.com","summaryOverride":"Me","backgroundColor":"#16a765","accessRole":"owner","primary":true,"selected":true},
+                    {"id":"hidden@group.calendar.google.com","summary":"Hidden","accessRole":"owner"},
+                    {"id":"en.usa#holiday@group.v.calendar.google.com","summary":"Holidays","accessRole":"reader","selected":true}]}' ;;
   "events list")
     if [[ "$params" == *'"me@gmail.com"'* ]]; then
       echo '{"items":[{"id":"g1","status":"confirmed","summary":"Design review","start":{"dateTime":"2026-10-13T16:00:00+02:00"},"end":{"dateTime":"2026-10-13T17:00:00+02:00"}},

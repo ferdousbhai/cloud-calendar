@@ -1,6 +1,6 @@
 //! The event editor: a new event, or changes to one. All-day events show their last day (the
 //! stored end is the day after). A repeating event's changes reach its whole series, so its times
-//! can't change here.
+//! can't change here, and what its provider can't do to a series at all is switched off.
 
 use chrono::{Local, NaiveDate};
 use cloud_calendar_api::{self as api, Event, EventChange, NewEvent, Time};
@@ -45,27 +45,49 @@ fn typed(all_day: bool, sd: &str, st: &str, ed: &str, et: &str) -> api::Result<(
     if all_day {
         let s = date(sd)?;
         let last = if ed.trim().is_empty() { s } else { date(ed)? };
-        let (start, end) = (Time::Date(s), Time::Date(last + chrono::Days::new(1)));
+        let after = last.checked_add_days(chrono::Days::new(1)).ok_or_else(|| api::Error::bad_request("the last day is out of range"))?;
+        let (start, end) = (Time::Date(s), Time::Date(api::time::bounded(after, "the last day")?));
         api::check_span(&start, &end)?;
         return Ok((start, end));
     }
+    if st.trim().is_empty() {
+        return Err(api::Error::bad_request("Give a start time, or tick All day."));
+    }
     let at = |d: &str, t: &str| api::time::parse_time(&format!("{} {}", date(d)?.format("%Y-%m-%d"), t.trim()), today);
     let start = at(sd, st)?;
-    let end = if et.trim().is_empty() { api::time::add_length(&start, chrono::Duration::hours(1)) } else { at(if ed.trim().is_empty() { sd } else { ed }, et)? };
+    let end = if et.trim().is_empty() { api::time::add_length(&start, chrono::Duration::hours(1))? } else { at(if ed.trim().is_empty() { sd } else { ed }, et)? };
     api::check_span(&start, &end)?;
     Ok((start, end))
+}
+
+/// Whether the time inputs differ from what the editor showed: only then is a time sent, so a
+/// change to the title alone never moves the event (shown clocks drop seconds).
+fn times_touched(shown_all_day: bool, shown: [&str; 4], all_day: bool, now: [&str; 4]) -> bool {
+    shown_all_day != all_day || shown.iter().zip(now).any(|(a, b)| a.trim() != b.trim())
+}
+
+/// Fills the calendar list from `writable`, keeping the choice when it's still there.
+fn fill_calendars(dropdown: &gtk::DropDown, writable: &[api::Calendar]) {
+    let chosen = dropdown.selected_item().and_downcast::<gtk::StringObject>().map(|o| o.string().to_string());
+    let names: Vec<String> = writable.iter().map(|c| format!("{} ({})", c.name, c.account)).collect();
+    dropdown.set_model(Some(&gtk::StringList::new(&names.iter().map(String::as_str).collect::<Vec<_>>())));
+    if let Some(i) = chosen.and_then(|c| names.iter().position(|n| *n == c)) {
+        dropdown.set_selected(i as u32);
+    }
 }
 
 pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     let Some(cals) = ui.calendars.borrow().clone() else { return };
     let win = gtk::Window::builder().title(if event.is_some() { "Event" } else { "New event" }).transient_for(&ui.window).modal(true).default_width(520).build();
     win.add_css_class("editor");
+    // While a save or delete runs, the editor stays open: closing it would hide the outcome.
+    let busy = Rc::new(std::cell::Cell::new(false));
+    win.connect_close_request(glib::clone!(#[strong] busy, move |_| if busy.get() { glib::Propagation::Stop } else { glib::Propagation::Proceed }));
     let grid = gtk::Grid::builder().row_spacing(8).column_spacing(10).build();
     grid.add_css_class("editor");
 
-    let writable = ui.writable.borrow().clone();
-    let names: Vec<String> = writable.iter().map(|c| format!("{} ({})", c.name, c.account)).collect();
-    let calendar = gtk::DropDown::from_strings(&names.iter().map(String::as_str).collect::<Vec<_>>());
+    let calendar = gtk::DropDown::from_strings(&[]);
+    fill_calendars(&calendar, &ui.writable.borrow());
     let title = entry(event.as_ref().map(|e| e.title.as_str()).unwrap_or(""), "Title");
     let all_day = gtk::CheckButton::with_label("All day");
     let (start, end) = match &event {
@@ -91,6 +113,38 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         row
     };
     let mut row = 0;
+    let recurring = event.as_ref().is_some_and(|e| e.recurring);
+    // What this event's provider can do to its series, said up front.
+    let support = match event.as_ref().filter(|e| e.recurring) {
+        Some(e) => match cals.series_support(&e.id) {
+            Ok((support, label)) => Some((support, label)),
+            Err(_) => Some((api::SeriesSupport { edit: false, delete: false }, "this".to_string())),
+        },
+        None => None,
+    };
+    if let Some(caveat) = event.as_ref().and_then(|e| cals.edit_caveat(&e.id)) {
+        let mut caveat = caveat;
+        caveat[..1].make_ascii_uppercase();
+        let note = gtk::Label::new(Some(&format!("{caveat}.")));
+        note.add_css_class("note");
+        note.set_wrap(true);
+        note.set_xalign(0.0);
+        grid.attach(&note, 1, row, 1, 1);
+        row += 1;
+    }
+    if let Some((support, label)) = &support {
+        let text = match (support.edit, support.delete) {
+            (true, _) => format!("A repeating {label} event: changes reach every occurrence, and its time can only change in {label}."),
+            (false, true) => format!("A repeating {label} event can't be changed here, only deleted (the whole series); change it in {label}."),
+            (false, false) => format!("A repeating {label} event can't be changed or deleted here; use {label}."),
+        };
+        let note = gtk::Label::new(Some(&text));
+        note.add_css_class("note");
+        note.set_wrap(true);
+        note.set_xalign(0.0);
+        grid.attach(&note, 1, row, 1, 1);
+        row += 1;
+    }
     match &event {
         None => field(&grid, row, "Calendar", &calendar),
         Some(e) => field(&grid, row, "Calendar", &gtk::Label::builder().label(format!("{} ({})", e.calendar, e.account)).xalign(0.0).build()),
@@ -109,23 +163,41 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     row += 1;
     field(&grid, row, "Notes", &notes);
     row += 1;
-    let recurring = event.as_ref().is_some_and(|e| e.recurring);
     if recurring {
-        let note = gtk::Label::new(Some("A repeating event: changes reach every occurrence, and its time can only change in the calendar it came from."));
-        note.add_css_class("note");
-        note.set_wrap(true);
-        note.set_xalign(0.0);
-        grid.attach(&note, 1, row, 1, 1);
-        row += 1;
         for w in [sd.upcast_ref::<gtk::Widget>(), st.upcast_ref(), ed.upcast_ref(), et.upcast_ref(), all_day.upcast_ref()] {
             w.set_sensitive(false);
         }
     }
-    if event.is_none() && writable.is_empty() {
-        let note = gtk::Label::new(Some("No calendar you can add to was found (still loading, or every account failed)."));
-        note.add_css_class("error");
-        grid.attach(&note, 1, row, 1, 1);
+    let can_edit = support.as_ref().is_none_or(|(s, _)| s.edit);
+    let can_delete = support.as_ref().is_none_or(|(s, _)| s.delete);
+    if !can_edit {
+        for w in [title.upcast_ref::<gtk::Widget>(), location.upcast_ref(), notes.upcast_ref()] {
+            w.set_sensitive(false);
+        }
+    }
+    // A new event waits for the calendars it can go on; the list follows when they arrive.
+    let no_calendars = gtk::Label::new(Some("No calendar you can add to has loaded yet (still loading, or an account failed: see the warning above the week)."));
+    no_calendars.add_css_class("error");
+    no_calendars.set_wrap(true);
+    no_calendars.set_xalign(0.0);
+    if event.is_none() {
+        no_calendars.set_visible(ui.writable.borrow().is_empty());
+        grid.attach(&no_calendars, 1, row, 1, 1);
         row += 1;
+        if ui.writable.borrow().is_empty() {
+            ui.load_calendars();
+        }
+        let ui_weak = Rc::downgrade(ui);
+        *ui.on_writable.borrow_mut() = Some(Box::new(glib::clone!(#[weak] calendar, #[weak] no_calendars, move || {
+            let Some(ui) = ui_weak.upgrade() else { return };
+            let writable = ui.writable.borrow();
+            fill_calendars(&calendar, &writable);
+            no_calendars.set_visible(writable.is_empty());
+        })));
+        win.connect_close_request(glib::clone!(#[weak] ui, #[upgrade_or] glib::Propagation::Proceed, move |_| {
+            ui.on_writable.borrow_mut().take();
+            glib::Propagation::Proceed
+        }));
     }
     let error = gtk::Label::new(None);
     error.add_css_class("error");
@@ -149,6 +221,8 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     let save = gtk::Button::with_label("Save");
     save.add_css_class("suggested");
     if event.is_some() {
+        delete.set_sensitive(can_delete);
+        save.set_sensitive(can_edit);
         buttons.append(&delete);
     }
     buttons.append(&cancel);
@@ -157,11 +231,16 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     win.set_child(Some(&grid));
 
     // Runs an account call off the main thread; closes the editor and reloads on success.
-    let run = Rc::new(glib::clone!(#[weak] ui, #[weak] win, #[weak] error, #[weak] save, move |job: Box<dyn FnOnce() -> api::Result<()> + Send>| {
-        save.set_sensitive(false);
+    let run = Rc::new(glib::clone!(#[weak] ui, #[weak] win, #[weak] error, #[weak] save, #[weak] cancel, #[weak] delete, #[strong] busy, move |job: Box<dyn FnOnce() -> api::Result<()> + Send>| {
+        busy.set(true);
+        for b in [&save, &cancel, &delete] {
+            b.set_sensitive(false);
+        }
         error.set_text("Saving…");
+        let busy = busy.clone();
         glib::MainContext::default().spawn_local(async move {
             let result = gio::spawn_blocking(job).await.unwrap_or_else(|_| Err(api::Error::new(api::ErrorKind::AccountUnavailable, "failed unexpectedly")));
+            busy.set(false);
             match result {
                 Ok(()) => {
                     win.close();
@@ -169,24 +248,34 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
                 }
                 Err(e) => {
                     error.set_text(&e.message);
-                    save.set_sensitive(true);
+                    save.set_sensitive(can_edit);
+                    cancel.set_sensitive(true);
+                    delete.set_sensitive(can_delete);
                 }
             }
         });
     }));
 
     let original = event.clone();
-    save.connect_clicked(glib::clone!(#[strong] run, #[strong] cals, #[weak] title, #[weak] all_day, #[weak] sd, #[weak] st, #[weak] ed, #[weak] et, #[weak] location, #[weak] notes, #[weak] calendar, #[weak] error, move |_| {
+    let shown_all_day = all_day.is_active();
+    let shown_times = [sd.text().to_string(), st.text().to_string(), ed.text().to_string(), et.text().to_string()];
+    save.connect_clicked(glib::clone!(#[strong] run, #[weak] ui, #[weak] title, #[weak] all_day, #[weak] sd, #[weak] st, #[weak] ed, #[weak] et, #[weak] location, #[weak] notes, #[weak] calendar, #[weak] error, move |_| {
         let buf = notes.buffer();
         let notes_text = buf.text(&buf.start_iter(), &buf.end_iter(), false).trim().to_string();
         let title_text = title.text().trim().to_string();
         let location_text = location.text().trim().to_string();
-        let cals = cals.clone();
+        // The accounts as they are now: one may have been linked or removed since this opened.
+        let Some(cals) = ui.calendars.borrow().clone() else {
+            return error.set_text("No accounts are linked any more; your entries are kept.");
+        };
         match &original {
             None => {
+                let writable = ui.writable.borrow();
+                if writable.is_empty() {
+                    return error.set_text("No calendar you can add to has loaded yet; your entries are kept, so try Save again in a moment.");
+                }
                 let Some(cal) = writable.get(calendar.selected() as usize) else {
-                    error.set_text("Pick a calendar.");
-                    return;
+                    return error.set_text("Pick a calendar.");
                 };
                 let (start, end) = match typed(all_day.is_active(), &sd.text(), &st.text(), &ed.text(), &et.text()) {
                     Ok(s) => s,
@@ -213,7 +302,9 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
                 if notes_text != e.notes.clone().unwrap_or_default() {
                     change.notes = Some(notes_text);
                 }
-                if !e.recurring {
+                let now = [sd.text().to_string(), st.text().to_string(), ed.text().to_string(), et.text().to_string()];
+                let touched = times_touched(shown_all_day, shown_times.each_ref().map(String::as_str), all_day.is_active(), now.each_ref().map(String::as_str));
+                if !e.recurring && touched {
                     match typed(all_day.is_active(), &sd.text(), &st.text(), &ed.text(), &et.text()) {
                         Ok((s, t)) if (s, t) != (e.start, e.end) => {
                             change.start = Some(s);
@@ -227,19 +318,22 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
                     return error.set_text("Nothing changed.");
                 }
                 let id = e.id.clone();
-                run(Box::new(move || cals.update(&id, &change)));
+                run(Box::new(move || cals.update(&id, &change).map(|_| ())));
             }
         }
     }));
 
     let confirming = Rc::new(std::cell::Cell::new(false));
-    delete.connect_clicked(glib::clone!(#[strong] run, #[strong] cals, #[strong] event, move |b| {
+    delete.connect_clicked(glib::clone!(#[strong] run, #[weak] ui, #[weak] error, #[strong] event, move |b| {
         let Some(e) = &event else { return };
         if !confirming.replace(true) {
             b.set_label(if e.recurring { "Delete every occurrence?" } else { "Really delete?" });
             return;
         }
-        let (cals, id) = (cals.clone(), e.id.clone());
+        let Some(cals) = ui.calendars.borrow().clone() else {
+            return error.set_text("No accounts are linked any more.");
+        };
+        let id = e.id.clone();
         run(Box::new(move || cals.delete(&id)));
     }));
     cancel.connect_clicked(glib::clone!(#[weak] win, move |_| win.close()));
@@ -268,5 +362,19 @@ mod tests {
         assert_eq!(typed(true, "2026-10-09", "", "2026-10-11", "").unwrap(), (Time::Date(d(9)), Time::Date(d(12))));
         assert_eq!(typed(true, "2026-10-09", "", "", "").unwrap().1, Time::Date(d(10)));
         assert!(typed(true, "2026-10-09", "", "2026-10-08", "").is_err());
+    }
+
+    #[test]
+    fn timed_needs_a_start_time() {
+        let e = typed(false, "2026-10-09", "", "2026-10-11", "").unwrap_err();
+        assert!(e.message.contains("start time"), "{}", e.message);
+    }
+
+    #[test]
+    fn only_touched_times_are_sent() {
+        let shown = ["2026-10-09", "14:00", "2026-10-09", "15:00"];
+        assert!(!times_touched(false, shown, false, shown));
+        assert!(times_touched(false, shown, false, ["2026-10-09", "14:30", "2026-10-09", "15:00"]));
+        assert!(times_touched(false, shown, true, shown));
     }
 }

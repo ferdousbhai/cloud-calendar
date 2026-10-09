@@ -83,6 +83,23 @@ pub fn save(config: &Config) -> Result<PathBuf> {
     Ok(p)
 }
 
+/// Loads, changes and saves the config under a lock on `config.lock` beside it, so two changes at
+/// once (the app and the CLI, or two sign-ins) can't drop each other's accounts.
+pub fn update<T>(change: impl FnOnce(&mut Config) -> Result<T>) -> Result<T> {
+    let p = path();
+    let lock_path = p.with_file_name("config.lock");
+    let lock_err = |e: std::io::Error| Error::new(ErrorKind::Config, format!("could not lock {}: {e}", lock_path.display()));
+    if let Some(dir) = lock_path.parent() {
+        private_dir(dir).map_err(lock_err)?;
+    }
+    let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&lock_path).map_err(lock_err)?;
+    lock.lock().map_err(lock_err)?;
+    let mut config = read(&p)?;
+    let out = change(&mut config)?;
+    save(&config)?;
+    Ok(out)
+}
+
 /// Creates a directory (and its parents) readable only by you.
 pub fn private_dir(dir: &Path) -> std::io::Result<()> {
     let mut builder = std::fs::DirBuilder::new();

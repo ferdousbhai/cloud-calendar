@@ -18,7 +18,7 @@ remote_commit=$(gh api "repos/$gh_repo/commits/$tag" --jq .sha)
 gpg --batch --list-secret-keys "$fingerprint" >/dev/null 2>&1 \
   || { echo "The package-signing key $fingerprint is not in this keyring." >&2; exit 1; }
 gh release view "$tag" --repo "$gh_repo" >/dev/null \
-  || { echo "No GitHub release for $tag; draft one first (bin/release-on-tag does)." >&2; exit 1; }
+  || { echo "No GitHub release for $tag; draft one first: gh release create $tag --draft --verify-tag --generate-notes" >&2; exit 1; }
 step "Waiting for native package CI for $tag"
 run=${2:-}
 if [[ -z $run ]]; then

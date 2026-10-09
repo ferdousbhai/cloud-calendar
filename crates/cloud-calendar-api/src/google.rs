@@ -21,7 +21,8 @@
 //!
 //! IDs: a calendar is `google:<calendarId>`, an event `google:<calendarId>/<eventId>`; listings
 //! expand repeating events (`singleEvents`), and an occurrence's edits and deletes go to its series
-//! (`recurringEventId`). Only calendars shown in Google Calendar (`selected`) are read.
+//! (`recurringEventId`). Only calendars shown in Google Calendar are read: `selected` true (Google
+//! omits it for a hidden calendar).
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Map, Value, json};
@@ -84,6 +85,21 @@ pub fn when_json(t: &Time) -> Value {
         Time::At(t) => json!({ "dateTime": t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true) }),
         Time::Date(d) => json!({ "date": d.format("%Y-%m-%d").to_string() }),
     }
+}
+
+/// `when_json` for a patch: Google merges a patch's nested objects into the event's, so the
+/// field of the other kind is cleared explicitly, or a move between all-day and timed keeps both
+/// `date` and `dateTime` and is rejected.
+fn patch_when_json(t: &Time) -> Value {
+    let mut v = when_json(t);
+    match t {
+        Time::At(_) => v["date"] = Value::Null,
+        Time::Date(_) => {
+            v["dateTime"] = Value::Null;
+            v["timeZone"] = Value::Null;
+        }
+    }
+    v
 }
 
 /// cloud-calendar's own gws directory for an account, beside its config file.
@@ -318,6 +334,9 @@ impl Google {
                     continue;
                 }
                 let (Some(start), Some(end)) = (parse_when(&e["start"]), parse_when(&e["end"])) else { continue };
+                if !range.overlaps(&start, &end) {
+                    continue;
+                }
                 let recurring = e["recurringEventId"].as_str().is_some_and(|r| !r.is_empty());
                 let suffix = if recurring { provider::occurrence_suffix(&start) } else { String::new() };
                 let title = text(&e["summary"]);
@@ -400,7 +419,7 @@ impl Provider for Google {
 
     fn events(&self, range: &Range) -> Result<Vec<Event>> {
         let list = self.calendar_list()?;
-        let cals: Vec<Calendar> = list.iter().filter(|c| c["selected"] != json!(false)).filter_map(|c| self.to_calendar(c)).collect();
+        let cals: Vec<Calendar> = list.iter().filter(|c| c["selected"] == json!(true)).filter_map(|c| self.to_calendar(c)).collect();
         let results: Vec<Result<Vec<Event>>> = std::thread::scope(|s| {
             let handles: Vec<_> = cals.iter().map(|c| s.spawn(move || self.calendar_events(c, range))).collect();
             handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err(self.fail(ErrorKind::AccountUnavailable, "failed unexpectedly")))).collect()
@@ -430,7 +449,7 @@ impl Provider for Google {
         Ok(format!("{}:{cal}/{id}", self.name))
     }
 
-    fn update(&self, id: &str, change: &EventChange) -> Result<()> {
+    fn update(&self, id: &str, change: &EventChange) -> Result<String> {
         let (_, _, occurrence) = self.event_ref(id)?;
         if occurrence {
             provider::refuse_series_move("Google", change)?;
@@ -451,13 +470,13 @@ impl Provider for Google {
                 return Err(self.fail(ErrorKind::AccountUnavailable, "the event has no start or end to move"));
             };
             let (s, e) = provider::changed_span(change, s, e)?;
-            body.insert("start".into(), when_json(&s));
-            body.insert("end".into(), when_json(&e));
+            body.insert("start".into(), patch_when_json(&s));
+            body.insert("end".into(), patch_when_json(&e));
         }
         if body.is_empty() {
-            return Ok(());
+            return Ok(id.to_string());
         }
-        self.call("events", "patch", json!({ "calendarId": cal, "eventId": target }), Some(&Value::Object(body))).map(|_| ())
+        self.call("events", "patch", json!({ "calendarId": cal, "eventId": target }), Some(&Value::Object(body))).map(|_| id.to_string())
     }
 
     fn delete(&self, id: &str) -> Result<()> {

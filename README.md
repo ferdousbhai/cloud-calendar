@@ -87,7 +87,13 @@ cloud-calendar account add hey
 ```
 
 HEY reads by week, over the calendars switched on in HEY. Moving a HEY event needs both its new
-start and its new end, because the CLI can't read one event back to keep its length.
+start and its new end, because the CLI can't read one event back to keep its length. Events can't
+be added to HEY's personal calendar (HEY refuses them there), so it shows as read-only.
+
+Editing a HEY event, even just its title, removes its countdown, flattens its notes' formatting and
+detaches an attached email you can't read: HEY's CLI resends the whole event, and HEY serves notes
+back as plain text and countdowns and such emails not at all. The editor says so before you save, and `cloud-calendar event edit` adds an
+`edit_side_effects` warning to its output.
 
 ### Where sign-ins live
 
@@ -124,7 +130,7 @@ From the terminal:
 ```sh
 cloud-calendar today
 cloud-calendar week                    # this week, Monday to Sunday; or `week 2026-10-20`
-cloud-calendar agenda --from tomorrow --days 14
+cloud-calendar agenda --from tomorrow --days 14   # 1 to 366 days
 cloud-calendar calendars               # calendar IDs, and which are read-only
 
 cloud-calendar event add --calendar icloud:home --title "Dentist" \
@@ -137,8 +143,9 @@ cloud-calendar event delete <id> --yes
 
 A date alone (`2026-10-20`) means all-day, and an all-day `--end` is exclusive: `--start 2026-10-20
 --end 2026-10-23` covers the 20th, 21st and 22nd. Times are local: `2026-10-14 09:00`,
-`tomorrow 15:00`, `14:00` (today), or RFC 3339. For a Google or HEY repeating event, changing or
-deleting one occurrence changes the whole series; its time can only change in Google or HEY.
+`tomorrow 15:00`, `14:00` (today), or RFC 3339. For a Google repeating event, changing or deleting
+one occurrence changes the whole series; its time can only change in Google. A HEY repeating event
+can be deleted (the whole series) but not changed here: change it in HEY.
 
 ### For agents
 

@@ -47,7 +47,7 @@ pub fn agenda(events: &[Event], range: &Range) -> String {
     let mut out = String::new();
     let mut day = first;
     while day <= last {
-        let day_range = Range::days(day, 1);
+        let day_range = Range::day(day);
         let todays: Vec<&Event> = events.iter().filter(|e| day_range.overlaps(&e.start, &e.end)).collect();
         if !todays.is_empty() {
             out.push_str(&format!("{} {} {}\n", day.weekday(), day.day(), day.format("%b")));

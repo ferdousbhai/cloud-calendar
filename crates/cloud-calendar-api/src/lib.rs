@@ -16,6 +16,6 @@ pub mod unified;
 
 pub use config::Config;
 pub use error::{Error, ErrorKind, Result};
-pub use provider::{AccountStatus, AccountWarning, Provider};
+pub use provider::{AccountStatus, AccountWarning, Provider, SeriesSupport};
 pub use types::*;
 pub use unified::{Calendars, Listing};

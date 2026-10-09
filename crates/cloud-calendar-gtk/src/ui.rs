@@ -5,7 +5,7 @@
 use chrono::{Datelike, Local, NaiveDate};
 use cloud_calendar_api::{self as api, Calendar, Calendars, Event, Range, Time};
 use gtk::{gdk, gio, glib, prelude::*};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::{editor, theme};
@@ -32,6 +32,12 @@ pub struct Ui {
     setup_error: RefCell<Option<String>>,
     /// Calendars you can add events to, once read.
     pub writable: RefCell<Vec<Calendar>>,
+    /// The last read of calendars answered for every account; until then each reload reads again.
+    calendars_complete: Cell<bool>,
+    /// Bumped on every read of calendars, so an answer for accounts since changed is dropped.
+    calendars_generation: Cell<u64>,
+    /// Told when `writable` changes (the open editor rebuilds its calendar list).
+    pub on_writable: RefCell<Option<Box<dyn Fn()>>>,
 }
 
 pub fn monday(d: NaiveDate) -> NaiveDate {
@@ -111,6 +117,9 @@ impl Ui {
             calendars: RefCell::new(None),
             setup_error: RefCell::new(None),
             writable: RefCell::new(Vec::new()),
+            calendars_complete: Cell::new(false),
+            calendars_generation: Cell::new(0),
+            on_writable: RefCell::new(None),
         });
 
         prev.connect_clicked(glib::clone!(#[weak] ui, move |_| ui.shift(-1)));
@@ -156,7 +165,7 @@ impl Ui {
         *self.calendars.borrow_mut() = calendars;
         *self.setup_error.borrow_mut() = error;
         self.writable.borrow_mut().clear();
-        self.load_calendars();
+        self.calendars_complete.set(false);
         self.reload();
     }
 
@@ -168,7 +177,10 @@ impl Ui {
         {
             let mut s = self.state.borrow_mut();
             let days = if s.agenda { i64::from(AGENDA_DAYS) } else { 7 };
-            s.anchor += chrono::Duration::days(by * days);
+            // Stays within the years every calendar here can hold.
+            if let Some(a) = chrono::Duration::try_days(by * days).and_then(|d| s.anchor.checked_add_signed(d)).and_then(|a| api::time::bounded(a, "").ok()) {
+                s.anchor = a;
+            }
         }
         self.reload();
     }
@@ -189,25 +201,41 @@ impl Ui {
         }
     }
 
-    fn range(&self) -> Range {
+    fn range(&self) -> api::Result<Range> {
         let s = self.state.borrow();
         if s.agenda { Range::days(s.anchor, AGENDA_DAYS) } else { Range::days(monday(s.anchor), 7) }
     }
 
-    fn load_calendars(self: &Rc<Self>) {
+    /// Reads the calendars you can add to again; an open editor's list follows.
+    pub fn load_calendars(self: &Rc<Self>) {
         let Some(cals) = self.calendars.borrow().clone() else { return };
+        let generation = self.calendars_generation.get() + 1;
+        self.calendars_generation.set(generation);
         let ui = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
             let Ok(listing) = gio::spawn_blocking(move || cals.calendars()).await else { return };
-            if let Some(ui) = ui.upgrade() {
-                *ui.writable.borrow_mut() = listing.items.into_iter().filter(|c| c.writable).collect();
+            let Some(ui) = ui.upgrade() else { return };
+            if ui.calendars_generation.get() != generation {
+                return;
+            }
+            ui.calendars_complete.set(listing.warnings.is_empty());
+            *ui.writable.borrow_mut() = listing.items.into_iter().filter(|c| c.writable).collect();
+            if let Some(f) = ui.on_writable.borrow().as_ref() {
+                f();
             }
         });
     }
 
-    /// Reads the shown week (or agenda) again from every account.
+    /// Reads the shown week (or agenda) again from every account, and the calendars too until a
+    /// read of them answered for every account.
     pub fn reload(self: &Rc<Self>) {
-        let range = self.range();
+        if !self.calendars_complete.get() {
+            self.load_calendars();
+        }
+        let range = match self.range() {
+            Ok(r) => r,
+            Err(e) => return self.content.set_child(Some(&label(&e.message, "empty"))),
+        };
         let (agenda, anchor) = {
             let s = self.state.borrow();
             (s.agenda, s.anchor)
@@ -298,7 +326,7 @@ impl Ui {
             head.set_tooltip_text(Some("New event on this day"));
             head.connect_clicked(glib::clone!(#[weak(rename_to = ui)] self, move |_| ui.new_event(Some(day))));
             col.append(&head);
-            let range = Range::days(day, 1);
+            let range = Range::day(day);
             for e in events.iter().filter(|e| range.overlaps(&e.start, &e.end)) {
                 col.append(&self.event_button(e, false));
             }
@@ -313,8 +341,8 @@ impl Ui {
         let first = range.start.with_timezone(&Local).date_naive();
         let mut any = false;
         for i in 0..u64::from(AGENDA_DAYS) {
-            let day = first + chrono::Days::new(i);
-            let day_range = Range::days(day, 1);
+            let Some(day) = first.checked_add_days(chrono::Days::new(i)) else { break };
+            let day_range = Range::day(day);
             let todays: Vec<&Event> = events.iter().filter(|e| day_range.overlaps(&e.start, &e.end)).collect();
             if todays.is_empty() {
                 continue;
