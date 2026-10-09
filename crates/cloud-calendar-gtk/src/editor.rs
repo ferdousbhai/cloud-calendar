@@ -119,6 +119,16 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         },
         None => None,
     };
+    if let Some(caveat) = event.as_ref().and_then(|e| cals.edit_caveat(&e.id)) {
+        let mut caveat = caveat;
+        caveat[..1].make_ascii_uppercase();
+        let note = gtk::Label::new(Some(&format!("{caveat}.")));
+        note.add_css_class("note");
+        note.set_wrap(true);
+        note.set_xalign(0.0);
+        grid.attach(&note, 1, row, 1, 1);
+        row += 1;
+    }
     if let Some((support, label)) = &support {
         let text = match (support.edit, support.delete) {
             (true, _) => format!("A repeating {label} event: changes reach every occurrence, and its time can only change in {label}."),
@@ -239,12 +249,15 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     let original = event.clone();
     let shown_all_day = all_day.is_active();
     let shown_times = [sd.text().to_string(), st.text().to_string(), ed.text().to_string(), et.text().to_string()];
-    save.connect_clicked(glib::clone!(#[strong] run, #[strong] cals, #[weak] ui, #[weak] title, #[weak] all_day, #[weak] sd, #[weak] st, #[weak] ed, #[weak] et, #[weak] location, #[weak] notes, #[weak] calendar, #[weak] error, move |_| {
+    save.connect_clicked(glib::clone!(#[strong] run, #[weak] ui, #[weak] title, #[weak] all_day, #[weak] sd, #[weak] st, #[weak] ed, #[weak] et, #[weak] location, #[weak] notes, #[weak] calendar, #[weak] error, move |_| {
         let buf = notes.buffer();
         let notes_text = buf.text(&buf.start_iter(), &buf.end_iter(), false).trim().to_string();
         let title_text = title.text().trim().to_string();
         let location_text = location.text().trim().to_string();
-        let cals = cals.clone();
+        // The accounts as they are now: one may have been linked or removed since this opened.
+        let Some(cals) = ui.calendars.borrow().clone() else {
+            return error.set_text("No accounts are linked any more; your entries are kept.");
+        };
         match &original {
             None => {
                 let writable = ui.writable.borrow();
@@ -301,13 +314,16 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     }));
 
     let confirming = Rc::new(std::cell::Cell::new(false));
-    delete.connect_clicked(glib::clone!(#[strong] run, #[strong] cals, #[strong] event, move |b| {
+    delete.connect_clicked(glib::clone!(#[strong] run, #[weak] ui, #[weak] error, #[strong] event, move |b| {
         let Some(e) = &event else { return };
         if !confirming.replace(true) {
             b.set_label(if e.recurring { "Delete every occurrence?" } else { "Really delete?" });
             return;
         }
-        let (cals, id) = (cals.clone(), e.id.clone());
+        let Some(cals) = ui.calendars.borrow().clone() else {
+            return error.set_text("No accounts are linked any more.");
+        };
+        let id = e.id.clone();
         run(Box::new(move || cals.delete(&id)));
     }));
     cancel.connect_clicked(glib::clone!(#[weak] win, move |_| win.close()));

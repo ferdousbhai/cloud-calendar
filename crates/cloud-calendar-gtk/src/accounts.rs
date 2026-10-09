@@ -11,6 +11,8 @@ use crate::ui::Ui;
 struct Win {
     window: gtk::Window,
     list: gtk::Box,
+    /// The add buttons, off while a step runs.
+    add_row: gtk::Box,
     status: gtk::Label,
     ui: Rc<Ui>,
 }
@@ -30,10 +32,12 @@ impl Win {
         self.status.remove_css_class("error");
         self.status.set_text(busy);
         self.list.set_sensitive(false);
+        self.add_row.set_sensitive(false);
         let win = self.clone();
         glib::MainContext::default().spawn_local(async move {
             let result = gio::spawn_blocking(job).await.unwrap_or_else(|_| Err(api::Error::new(api::ErrorKind::AccountUnavailable, "failed unexpectedly")));
             win.list.set_sensitive(true);
+            win.add_row.set_sensitive(true);
             match result {
                 Ok(note) => win.status.set_text(&note),
                 Err(e) => {
@@ -108,14 +112,14 @@ pub fn open(ui: &Rc<Ui>) {
     root.add_css_class("editor");
     let list = gtk::Box::new(gtk::Orientation::Vertical, 8);
     let status = text("", "note");
-    let win = Rc::new(Win { window: window.clone(), list: list.clone(), status: status.clone(), ui: ui.clone() });
+    let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let win = Rc::new(Win { window: window.clone(), list: list.clone(), add_row: add_row.clone(), status: status.clone(), ui: ui.clone() });
 
     root.append(&text("Linked accounts", "setup-title"));
     root.append(&list);
     root.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
     root.append(&text("Add an account", "setup-title"));
 
-    let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let icloud = gtk::Button::with_label("iCloud");
     let google = gtk::Button::with_label("Google");
     let hey = gtk::Button::with_label("HEY");

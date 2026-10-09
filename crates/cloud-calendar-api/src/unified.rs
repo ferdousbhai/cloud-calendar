@@ -116,6 +116,11 @@ impl Calendars {
         Ok((a.series_support(), a.label().to_string()))
     }
 
+    /// What an edit of `id` does beyond the change asked for, if anything.
+    pub fn edit_caveat(&self, id: &str) -> Option<String> {
+        self.account_for(id).ok()?.edit_caveat().map(str::to_string)
+    }
+
     pub fn delete(&self, id: &str) -> Result<()> {
         self.account_for(id)?.delete(id)
     }

@@ -373,6 +373,12 @@ impl Provider for Hey {
         self.run(&Self::args(&["event", "delete", &target])).map(|_| ())
     }
 
+    /// hey 1.7 resends the whole event on any edit (HEY clears what a write leaves out): HEY
+    /// serves notes back as plain text and no countdown at all (`hey event edit --help`).
+    fn edit_caveat(&self) -> Option<&'static str> {
+        Some("editing a HEY event removes its countdown and flattens its notes' formatting (HEY's CLI resends the whole event)")
+    }
+
     fn series_support(&self) -> provider::SeriesSupport {
         provider::SeriesSupport { edit: false, delete: true }
     }

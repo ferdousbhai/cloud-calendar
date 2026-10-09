@@ -259,6 +259,7 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     assert_eq!(code, 2, "a HEY move names both ends: {v}");
     let (v, code) = home.json(&["event", "edit", "hey:401", "--start", "2026-10-14 13:00", "--end", "2026-10-14 14:30", "--location", ""], &[]);
     assert_eq!(code, 0, "{v}");
+    assert_eq!(v["meta"]["warnings"][0]["code"], "edit_side_effects", "a HEY edit says what it drops: {v}");
     let (v, code) = home.json(&["event", "delete", "hey:500~20261013T060000Z", "--yes"], &[]);
     assert_eq!(code, 0, "{v}");
     let writes: Vec<String> = home.file("hey.log").lines().filter(|l| l.starts_with("event\t")).map(str::to_string).collect();
@@ -358,4 +359,20 @@ fn out_of_range_dates_and_lengths_are_refused() {
         let (v, code) = home.json(args, &[]);
         assert_eq!((code, v["error"]["code"].as_str()), (2, Some("bad_request")), "{args:?}: {v}");
     }
+}
+
+#[test]
+fn accounts_linked_at_once_both_stay() {
+    let home = Home::new("race", true);
+    std::thread::scope(|s| {
+        // The first add's sign-in is slow; the second links meanwhile.
+        let slow = s.spawn(|| home.json(&["account", "add", "hey", "--name", "slow"], &[("FAKE_HEY_STATUS_DELAY", "2")]));
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let (v, code) = home.json(&["account", "add", "hey", "--name", "quick"], &[]);
+        assert_eq!(code, 0, "{v}");
+        let (v, code) = slow.join().unwrap();
+        assert_eq!(code, 0, "{v}");
+    });
+    let config = home.file("config/cloud-calendar/config.toml");
+    assert!(config.contains("[accounts.slow]") && config.contains("[accounts.quick]"), "{config}");
 }

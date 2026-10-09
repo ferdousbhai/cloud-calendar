@@ -77,6 +77,10 @@ pub trait Provider: Send + Sync {
     fn series_support(&self) -> SeriesSupport {
         SeriesSupport { edit: true, delete: true }
     }
+    /// What any edit does beyond the change asked for, said before and after one.
+    fn edit_caveat(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// Providers cloud-calendar knows how to link, for `account add` and its help.

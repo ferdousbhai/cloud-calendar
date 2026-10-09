@@ -8,7 +8,7 @@
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::config::{self, AccountConfig};
+use crate::config::{self, AccountConfig, Config};
 use crate::error::{Error, ErrorKind, Result};
 use crate::google::Google;
 use crate::hey::Hey;
@@ -97,13 +97,18 @@ pub fn add(name: Option<&str>, link: Link) -> Result<(String, String)> {
     if !provider::valid_name(&name) {
         return Err(Error::bad_request(format!("\"{name}\" can't be an account name: use lowercase letters, digits and dashes")));
     }
-    let mut config = config::load()?;
-    if config.accounts.contains_key(&name) {
-        return Err(Error::bad_request(format!("an account named {name} is already linked")));
-    }
-    if provider == "icloud" && config.accounts.iter().any(|(n, c)| c.provider(n) == "icloud") {
-        return Err(Error::bad_request("iCloud is already linked: icloud-session holds one iCloud sign-in for every app"));
-    }
+    // Checked before the sign-in, and again after it under the config lock: the sign-in can take
+    // minutes, and accounts may be linked or removed meanwhile.
+    let free = |config: &Config| {
+        if config.accounts.contains_key(&name) {
+            return Err(Error::bad_request(format!("an account named {name} is already linked")));
+        }
+        if provider == "icloud" && config.accounts.iter().any(|(n, c)| c.provider(n) == "icloud") {
+            return Err(Error::bad_request("iCloud is already linked: icloud-session holds one iCloud sign-in for every app"));
+        }
+        Ok(())
+    };
+    free(&config::load()?)?;
     let mut cfg = AccountConfig { provider: (name != provider).then(|| provider.to_string()), ..Default::default() };
     match &link {
         Link::ICloud => {}
@@ -112,8 +117,11 @@ pub fn add(name: Option<&str>, link: Link) -> Result<(String, String)> {
         Link::Hey { account } => cfg.account = account.clone().filter(|a| !a.trim().is_empty()),
     }
     let note = sign_in(&name, &cfg)?;
-    config.accounts.insert(name.clone(), cfg);
-    config::save(&config)?;
+    config::update(|config| {
+        free(config)?;
+        config.accounts.insert(name.clone(), cfg);
+        Ok(())
+    })?;
     Ok((name, note))
 }
 
@@ -126,16 +134,16 @@ pub fn login(name: &str) -> Result<String> {
 
 /// Unlinks an account and forgets what Cloud Calendar kept for it.
 pub fn remove(name: &str) -> Result<String> {
-    let mut config = config::load()?;
-    let cfg = config.accounts.remove(name).ok_or_else(|| Error::new(ErrorKind::NotFound, format!("no account named {name}")))?;
-    let note = match cfg.provider(name) {
-        "google" => {
-            Google::new(name, &cfg).forget().map_err(|e| Error::new(ErrorKind::AccountUnavailable, format!("could not remove the Google sign-in: {e}")))?;
-            "signed out of Google on this computer"
-        }
-        "icloud" => "iCloud stays signed in for your other apps (icloud-session)",
-        _ => "hey stays signed in for its own use",
-    };
-    config::save(&config)?;
-    Ok(format!("unlinked {name}: {note}; its calendars are untouched"))
+    config::update(|config| {
+        let cfg = config.accounts.remove(name).ok_or_else(|| Error::new(ErrorKind::NotFound, format!("no account named {name}")))?;
+        let note = match cfg.provider(name) {
+            "google" => {
+                Google::new(name, &cfg).forget().map_err(|e| Error::new(ErrorKind::AccountUnavailable, format!("could not remove the Google sign-in: {e}")))?;
+                "signed out of Google on this computer"
+            }
+            "icloud" => "iCloud stays signed in for your other apps (icloud-session)",
+            _ => "hey stays signed in for its own use",
+        };
+        Ok(format!("unlinked {name}: {note}; its calendars are untouched"))
+    })
 }

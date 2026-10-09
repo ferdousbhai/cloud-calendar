@@ -6,6 +6,7 @@
 #   FAKE_HEY_MODE=ok (default) | logged_out | crash | garbage
 #   FAKE_HEY_SOON=1       one event starts five minutes from now (for notifications)
 #   FAKE_HEY_STORAGE=file the sign-in is in hey's plaintext file rather than the keyring
+#   FAKE_HEY_STATUS_DELAY=<seconds>  `auth status` answers that much later (a slow sign-in)
 args=()
 for a in "$@"; do [[ "$a" == "--json" ]] || args+=("$a"); done
 [[ -n "$FAKE_HEY_LOG" ]] && (IFS=$'\t'; printf '%s\n' "${args[*]}") >> "$FAKE_HEY_LOG"
@@ -17,6 +18,7 @@ ok() { printf '{"ok":true,"data":%s,"summary":"done"}\n' "$1"; exit 0; }
 fail() { printf '{"ok":false,"error":"%s","code":"%s"}\n' "$2" "$3"; exit "$1"; }
 
 if [[ "$1 $2" == "auth status" ]]; then
+  [[ -n "$FAKE_HEY_STATUS_DELAY" ]] && sleep "$FAKE_HEY_STATUS_DELAY"
   [[ "$mode" == "logged_out" ]] && ok '{"authenticated":false}'
   ok "{\"authenticated\":true,\"auth_type\":\"oauth\",\"storage\":\"${FAKE_HEY_STORAGE:-keyring}\"}"
 fi

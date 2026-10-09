@@ -249,7 +249,12 @@ fn event(e: EventCommand) -> api::Result<Out> {
                 return Err(Error::bad_request("nothing to change: give --title, --start, --end, --location or --notes"));
             }
             c.update(&a.id, &change)?;
+            let caveat = c.edit_caveat(&a.id);
             let mut out = Out::new(json!({ "id": a.id }), format!("changed {}", a.id));
+            if let Some(message) = caveat {
+                let account = a.id.split_once(':').map(|(n, _)| n).unwrap_or_default().to_string();
+                out.warnings.push(api::AccountWarning { account, code: "edit_side_effects".into(), message });
+            }
             out.ids = vec![a.id];
             Ok(out)
         }
