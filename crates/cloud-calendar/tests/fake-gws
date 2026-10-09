@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# A stand-in for Google's Workspace CLI `gws` for tests: `gws calendar <resource> <method>
+# --params <json> [--json <body>]`, answered with synthetic Calendar API JSON.
+#
+#   FAKE_GWS_LOG=<file>   append each invocation's arguments (tab-separated) to <file>
+#   FAKE_GWS_MODE=ok (default) | expired | offline
+[[ -n "$FAKE_GWS_LOG" ]] && (IFS=$'\t'; printf '%s\n' "$*") >> "$FAKE_GWS_LOG"
+case "${FAKE_GWS_MODE:-ok}" in
+  expired) echo '{"error":{"code":401,"message":"Invalid Credentials"}}'; exit 1 ;;
+  offline) echo '{"error":{"message":"discovery failed"}}'; exit 4 ;;
+esac
+params=""
+for ((i=1; i<=$#; i++)); do [[ "${!i}" == "--params" ]] && { j=$((i+1)); params="${!j}"; }; done
+case "$2 $3" in
+  "calendarList list")
+    echo '{"items":[{"id":"me@gmail.com","summary":"me@gmail.com","summaryOverride":"Me","backgroundColor":"#16a765","accessRole":"owner","primary":true},
+                    {"id":"hidden@group.calendar.google.com","summary":"Hidden","accessRole":"owner","selected":false},
+                    {"id":"en.usa#holiday@group.v.calendar.google.com","summary":"Holidays","accessRole":"reader"}]}' ;;
+  "events list")
+    if [[ "$params" == *'"me@gmail.com"'* ]]; then
+      echo '{"items":[{"id":"g1","status":"confirmed","summary":"Design review","start":{"dateTime":"2026-10-13T16:00:00+02:00"},"end":{"dateTime":"2026-10-13T17:00:00+02:00"}},
+                      {"id":"s1_20261012T080000Z","recurringEventId":"s1","summary":"Standup","start":{"dateTime":"2026-10-12T08:00:00Z"},"end":{"dateTime":"2026-10-12T08:15:00Z"}},
+                      {"id":"gone","status":"cancelled"}]}'
+    elif [[ "$params" == *hidden* ]]; then
+      echo '{"items":[{"id":"h1","summary":"Should not show","start":{"date":"2026-10-13"},"end":{"date":"2026-10-14"}}]}'
+    else
+      echo '{"items":[{"id":"hol1","summary":"Columbus Day","start":{"date":"2026-10-12"},"end":{"date":"2026-10-13"}}]}'
+    fi ;;
+  "events get")
+    if [[ "$params" == *s1_* ]]; then
+      echo '{"id":"s1_20261012T080000Z","recurringEventId":"s1","start":{"dateTime":"2026-10-12T08:00:00Z"},"end":{"dateTime":"2026-10-12T08:15:00Z"}}'
+    else
+      echo '{"id":"g1","start":{"dateTime":"2026-10-13T14:00:00Z"},"end":{"dateTime":"2026-10-13T15:00:00Z"}}'
+    fi ;;
+  "events insert") echo '{"id":"new1","status":"confirmed"}' ;;
+  "events patch") echo '{"id":"patched"}' ;;
+  "events delete") ;;
+  *) echo '{"error":{"code":400,"message":"fake-gws: unknown"}}'; exit 3 ;;
+esac

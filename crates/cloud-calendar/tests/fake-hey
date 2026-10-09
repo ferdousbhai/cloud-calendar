@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# A stand-in for the `hey` CLI (basecamp/hey-cli 1.7) for tests and headless runs: synthetic data
+# shaped like `hey … --json` output; it changes nothing.
+#
+#   FAKE_HEY_LOG=<file>   append each invocation's arguments (tab-separated) to <file>
+#   FAKE_HEY_MODE=ok (default) | logged_out | crash | garbage
+#   FAKE_HEY_SOON=1       one event starts five minutes from now (for notifications)
+args=()
+for a in "$@"; do [[ "$a" == "--json" ]] || args+=("$a"); done
+[[ -n "$FAKE_HEY_LOG" ]] && (IFS=$'\t'; printf '%s\n' "${args[*]}") >> "$FAKE_HEY_LOG"
+set -- "${args[@]}"
+mode="${FAKE_HEY_MODE:-ok}"
+ok() { printf '{"ok":true,"data":%s,"summary":"done"}\n' "$1"; exit 0; }
+fail() { printf '{"ok":false,"error":"%s","code":"%s"}\n' "$2" "$3"; exit "$1"; }
+
+if [[ "$1 $2" == "auth status" ]]; then
+  [[ "$mode" == "logged_out" ]] && ok '{"authenticated":false}'
+  ok '{"authenticated":true,"auth_type":"oauth"}'
+fi
+case "$mode" in
+  logged_out) fail 3 "authentication required" auth ;;
+  crash) echo "panic: fake-hey crashed" >&2; exit 7 ;;
+  garbage) echo "not json"; exit 0 ;;
+esac
+
+cal='{"id":11,"name":"Personal","color":"#5522aa","owned":true}'
+case "$1 $2" in
+  "calendar list") ok "[$cal,{\"id\":12,\"name\":\"US Holidays\",\"external\":true}]" ;;
+  "event week")
+    if [[ -n "$FAKE_HEY_SOON" ]]; then
+      s=$(date -u -d '+5 minutes' +%Y-%m-%dT%H:%M:%SZ); e=$(date -u -d '+65 minutes' +%Y-%m-%dT%H:%M:%SZ)
+      ok "[{\"id\":900,\"type\":\"Calendar::Event\",\"title\":\"Dentist\",\"starts_at\":\"$s\",\"ends_at\":\"$e\",\"location\":\"Main St\",\"calendar\":$cal}]"
+    fi
+    ok "[{\"id\":401,\"type\":\"Calendar::Event\",\"title\":\"Lunch with Sam\",\"starts_at\":\"2026-10-14T12:00:00Z\",\"ends_at\":\"2026-10-14T13:00:00Z\",\"location\":\"Café\",\"calendar\":$cal},
+         {\"id\":500,\"parent_id\":500,\"occurrence_id\":\"500_2026-10-13\",\"recurring\":true,\"type\":\"Calendar::Event\",\"title\":\"Gym\",\"starts_at\":\"2026-10-13T06:00:00Z\",\"ends_at\":\"2026-10-13T07:00:00Z\",\"calendar\":$cal},
+         {\"id\":402,\"type\":\"Calendar::Event\",\"title\":\"Trip\",\"all_day\":true,\"starts_at\":\"2026-10-15T00:00:00Z\",\"ends_at\":\"2026-10-16T00:00:00Z\",\"calendar\":$cal}]" ;;
+  "event add") ok '{"id":777,"type":"Calendar::Event"}' ;;
+  "event edit") ok '{"id":'"$3"'}' ;;
+  "event delete")
+    [[ "$3" == "404" ]] && fail 2 "event not found" not_found
+    ok '{"deleted":true}' ;;
+esac
+fail 1 "fake-hey: unknown command $*" usage

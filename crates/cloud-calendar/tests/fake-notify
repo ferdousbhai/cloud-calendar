@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Records notifications instead of showing them: one tab-separated line of arguments per call.
+(IFS=$'\t'; printf '%s\n' "$*") >> "${FAKE_NOTIFY_LOG:?}"
