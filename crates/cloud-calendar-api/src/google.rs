@@ -21,7 +21,8 @@
 //!
 //! IDs: a calendar is `google:<calendarId>`, an event `google:<calendarId>/<eventId>`; listings
 //! expand repeating events (`singleEvents`), and an occurrence's edits and deletes go to its series
-//! (`recurringEventId`). Only calendars shown in Google Calendar (`selected`) are read.
+//! (`recurringEventId`). Only calendars shown in Google Calendar are read: `selected` true (Google
+//! omits it for a hidden calendar).
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::{Map, Value, json};
@@ -418,7 +419,7 @@ impl Provider for Google {
 
     fn events(&self, range: &Range) -> Result<Vec<Event>> {
         let list = self.calendar_list()?;
-        let cals: Vec<Calendar> = list.iter().filter(|c| c["selected"] != json!(false)).filter_map(|c| self.to_calendar(c)).collect();
+        let cals: Vec<Calendar> = list.iter().filter(|c| c["selected"] == json!(true)).filter_map(|c| self.to_calendar(c)).collect();
         let results: Vec<Result<Vec<Event>>> = std::thread::scope(|s| {
             let handles: Vec<_> = cals.iter().map(|c| s.spawn(move || self.calendar_events(c, range))).collect();
             handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err(self.fail(ErrorKind::AccountUnavailable, "failed unexpectedly")))).collect()
