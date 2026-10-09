@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/cloud-calendar-api", "crates/cloud-calendar", "crates/cloud-calendar-gtk"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/ferdousbhai/cloud-calendar"
+
+[workspace.dependencies]
+cloud-calendar-api = { path = "crates/cloud-calendar-api" }
+chrono = { version = "0.4.45", features = ["serde"] }
+chrono-tz = "0.10"
+dirs = "7.0.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
+toml = "1.1.6"
+ureq = "3"
+base64 = "0.23.1"
+roxmltree = "0.21"
+
+[profile.release]
+lto = "thin"
+strip = true

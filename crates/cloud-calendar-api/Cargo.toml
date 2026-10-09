@@ -1,0 +1,17 @@
+[package]
+name = "cloud-calendar-api"
+description = "Calendar providers (iCloud, Google, HEY), types and config for cloud-calendar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+dirs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+ureq.workspace = true
+base64.workspace = true
+roxmltree.workspace = true
