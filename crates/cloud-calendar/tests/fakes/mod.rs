@@ -1,6 +1,6 @@
 //! What the CLI meets in the tests instead of this machine's: a private dbus-daemon carrying a
-//! fake icloud-session (`io.github.ferdousbhai.ICloudSession`, as icloud-sessiond serves it) and a
-//! fake Secret Service (`org.freedesktop.secrets`), and a fake icloud.com calendar web service.
+//! fake icloud-session (`io.github.ferdousbhai.ICloudSession`, as icloud-sessiond serves it), and
+//! a fake icloud.com calendar web service.
 
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -10,7 +10,6 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use zbus::object_server::SignalEmitter;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value as ZValue};
 
 // ------------------------------------------------------------------ bus
 
@@ -154,99 +153,18 @@ impl FakeSession {
     }
 }
 
-// ------------------------------------------------------- Secret Service
-
-#[derive(Default, Clone)]
-pub struct StoredSecret {
-    pub attributes: HashMap<String, String>,
-    pub secret: String,
-}
-
-type Secrets = Arc<Mutex<HashMap<String, StoredSecret>>>;
-const COLLECTION: &str = "/org/freedesktop/secrets/collection/login";
-
-fn obj(p: &str) -> OwnedObjectPath {
-    OwnedObjectPath::try_from(p.to_string()).unwrap()
-}
-
-struct SecretService;
-
-#[zbus::interface(name = "org.freedesktop.Secret.Service")]
-impl SecretService {
-    fn open_session(&self, _algorithm: String, _input: OwnedValue) -> (OwnedValue, OwnedObjectPath) {
-        (OwnedValue::try_from(ZValue::from("")).unwrap(), obj("/org/freedesktop/secrets/session/s1"))
-    }
-    fn read_alias(&self, _name: String) -> OwnedObjectPath {
-        obj(COLLECTION)
-    }
-}
-
-struct SecretCollection(Secrets);
-
-#[zbus::interface(name = "org.freedesktop.Secret.Collection")]
-impl SecretCollection {
-    #[zbus(property)]
-    fn locked(&self) -> bool {
-        false
-    }
-    fn search_items(&self, attributes: HashMap<String, String>) -> Vec<OwnedObjectPath> {
-        let items = self.0.lock().unwrap();
-        let mut found: Vec<_> = items.iter().filter(|(_, i)| attributes.iter().all(|(k, v)| i.attributes.get(k) == Some(v))).map(|(p, _)| obj(p)).collect();
-        found.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-        found
-    }
-    async fn create_item(
-        &self,
-        properties: HashMap<String, OwnedValue>,
-        secret: (OwnedObjectPath, Vec<u8>, Vec<u8>, String),
-        replace: bool,
-        #[zbus(object_server)] server: &zbus::ObjectServer,
-    ) -> (OwnedObjectPath, OwnedObjectPath) {
-        let attributes: HashMap<String, String> = properties.get("org.freedesktop.Secret.Item.Attributes").and_then(|v| HashMap::try_from(v.try_clone().unwrap()).ok()).unwrap_or_default();
-        let path = {
-            let mut items = self.0.lock().unwrap();
-            let existing = items.iter().find(|(_, i)| i.attributes == attributes).map(|(p, _)| p.clone());
-            let path = match existing.filter(|_| replace) {
-                Some(p) => p,
-                None => format!("{COLLECTION}/i{}", items.len() + 1),
-            };
-            items.insert(path.clone(), StoredSecret { attributes, secret: String::from_utf8(secret.2).unwrap() });
-            path
-        };
-        server.at(path.as_str(), SecretItem(self.0.clone(), path.clone())).await.unwrap();
-        (obj(&path), obj("/"))
-    }
-}
-
-struct SecretItem(Secrets, String);
-
-#[zbus::interface(name = "org.freedesktop.Secret.Item")]
-impl SecretItem {
-    #[zbus(property)]
-    fn locked(&self) -> bool {
-        false
-    }
-    fn get_secret(&self, session: OwnedObjectPath) -> (OwnedObjectPath, Vec<u8>, Vec<u8>, String) {
-        let secret = self.0.lock().unwrap().get(&self.1).map(|i| i.secret.clone()).unwrap_or_default();
-        (session, Vec::new(), secret.into_bytes(), "text/plain".into())
-    }
-    async fn delete(&self, #[zbus(object_server)] server: &zbus::ObjectServer) -> OwnedObjectPath {
-        self.0.lock().unwrap().remove(&self.1);
-        let _ = server.remove::<SecretItem, _>(self.1.as_str()).await;
-        obj("/")
-    }
-}
-
 /// The fake services on the bus, and what they hold.
 pub struct Services {
     pub session: Arc<Mutex<SessionState>>,
-    pub secrets: Secrets,
-    _conns: Vec<zbus::blocking::Connection>,
+    _conn: Option<zbus::blocking::Connection>,
 }
 
-pub fn serve(bus: &Bus, signed_in: bool, calendar_url: &str) -> Services {
+/// The fake icloud-session on the bus, or none (`installed` false: as if it isn't installed).
+pub fn serve(bus: &Bus, installed: bool, signed_in: bool, calendar_url: &str) -> Services {
     let session = Arc::new(Mutex::new(SessionState { signed_in, calendar_url: calendar_url.into(), ..Default::default() }));
-    let secrets: Secrets = Arc::default();
+    if !installed {
+        return Services { session, _conn: None };
+    }
     let icloud = zbus::blocking::connection::Builder::address(bus.address.as_str())
         .unwrap()
         .name("io.github.ferdousbhai.ICloudSession")
@@ -255,17 +173,7 @@ pub fn serve(bus: &Bus, signed_in: bool, calendar_url: &str) -> Services {
         .unwrap()
         .build()
         .unwrap();
-    let keyring = zbus::blocking::connection::Builder::address(bus.address.as_str())
-        .unwrap()
-        .name("org.freedesktop.secrets")
-        .unwrap()
-        .serve_at("/org/freedesktop/secrets", SecretService)
-        .unwrap()
-        .serve_at(COLLECTION, SecretCollection(secrets.clone()))
-        .unwrap()
-        .build()
-        .unwrap();
-    Services { session, secrets, _conns: vec![icloud, keyring] }
+    Services { session, _conn: Some(icloud) }
 }
 
 // ------------------------------------------------- icloud.com calendar

@@ -10,14 +10,14 @@ own notification system. It is the calendar sibling of [cloud-mail](https://gith
 - **Read and write.** Add, change and delete events in any calendar you can write to.
 - **No separate iCloud sign-in.** iCloud uses the sign-in [icloud-session](https://github.com/ferdousbhai/icloud-for-omarchy)
   already keeps for your other iCloud apps.
-- **Secrets only in the keyring.** Cloud Calendar keeps no password or token in a file; see
+- **No passwords of its own.** Every sign-in belongs to icloud-session, `gws` or `hey`; see
   [Where sign-ins live](#where-sign-ins-live).
 - **Notifications** a few minutes before each timed event, through `omarchy-notification-send`;
   clicking one opens the app.
 
 | Path | What |
 |---|---|
-| `crates/cloud-calendar-api` | Providers (`icloud.rs`, `google.rs`, `hey.rs`), the merged view (`unified.rs`), accounts (`accounts.rs`), the keyring (`keyring.rs`), notifications (`notify.rs`), config |
+| `crates/cloud-calendar-api` | Providers (`icloud.rs`, `google.rs`, `hey.rs`), the merged view (`unified.rs`), accounts (`accounts.rs`), notifications (`notify.rs`), config |
 | `crates/cloud-calendar` | `cloud-calendar` CLI |
 | `crates/cloud-calendar-gtk` | `cloud-calendar-gtk` desktop app (GTK4) |
 | `packaging/` | PKGBUILD (x86_64 and aarch64) and the notification timer's systemd user units |
@@ -32,7 +32,7 @@ cd packaging/aur/cloud-calendar && makepkg -si
 
 The PKGBUILD builds a release tag. Until there is one, `cargo build --release` in the checkout builds
 `target/release/cloud-calendar` and `target/release/cloud-calendar-gtk`. iCloud calendars need
-icloud-session (from icloud-for-omarchy) installed.
+icloud-session (from icloud-for-omarchy) installed; adding iCloud without it says so.
 
 ## Link your calendars
 
@@ -59,17 +59,17 @@ whole series isn't established well enough to rely on. Use the Calendar app or i
 ### Google
 
 Google Calendar goes through Google's own [Workspace CLI `gws`](https://github.com/googleworkspace/cli),
-the way cloud-mail reaches Gmail.
+the way cloud-mail reaches Gmail, with one browser sign-in and no Google Cloud setup of your own:
+Cloud Calendar brings its own Google sign-in.
 
 ```sh
 npm install -g @googleworkspace/cli
-cloud-calendar account add google --client-id <id>     # asks for the client secret
+cloud-calendar account add google      # opens Google's sign-in in your browser, once
 ```
 
-The sign-in needs a Google OAuth client: a "Desktop app" client in a Google Cloud project with the
-Google Calendar API enabled. Its ID goes in the config and its secret in your keyring. The sign-in
-asks for your events and your calendar list only. Calendars you've hidden in Google Calendar stay
-hidden here.
+The sign-in asks for your events and your calendar list only. Calendars you've hidden in Google
+Calendar stay hidden here. `gws` keeps the sign-in in Cloud Calendar's own directory
+(`~/.config/cloud-calendar/gws/<name>`), apart from any `gws` you use yourself.
 
 ### HEY
 
@@ -88,11 +88,8 @@ start and its new end, because the CLI can't read one event back to keep its len
 | Account | Sign-in | Kept in |
 |---|---|---|
 | iCloud | icloud-session's | icloud-session's keyring items |
-| Google | `gws`'s, with your OAuth client | client secret: the keyring. `gws`'s own sign-in: `~/.config/cloud-calendar/gws/<name>/credentials.enc`, encrypted with a key in a file beside it. gws can't keep that key only in the keyring on Linux |
+| Google | `gws`'s | `~/.config/cloud-calendar/gws/<name>/credentials.enc`, encrypted with a key in a file beside it: gws can't keep that key only in the keyring on Linux |
 | HEY | `hey`'s | the keyring; linking refuses a `hey` that fell back to its plain file |
-
-Without a running keyring (the Secret Service: GNOME Keyring, KWallet, KeePassXC), linking Google
-fails with a clear message rather than writing the secret anywhere else.
 
 ### Accounts
 
@@ -180,7 +177,6 @@ notify_minutes = [10]
 [accounts.icloud]
 
 [accounts.google]
-client_id = "…apps.googleusercontent.com"
 
 [accounts.hey]
 # account = "<hey linked-account id>"   # default: all
@@ -201,6 +197,21 @@ icloud-session and a fake Secret Service, against a fake icloud.com calendar ser
 `CLOUD_CALENDAR_GWS_COMMAND` and `CLOUD_CALENDAR_NOTIFY_COMMAND`. They need `dbus-daemon`. A new
 provider implements `Provider` in `provider.rs`, prefixes its IDs with its account name, and is
 added to `provider::open`.
+
+### Google sign-in (maintainers)
+
+Cloud Calendar's Google sign-in is one OAuth client, `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in
+`crates/cloud-calendar-api/src/google.rs` (a desktop client's secret isn't secret). It is meant to
+be the client of cloud-mail's Google Cloud project, with in that project:
+
+- the **Google Calendar API** enabled;
+- on the OAuth consent screen, the scopes `https://www.googleapis.com/auth/calendar.events` and
+  `https://www.googleapis.com/auth/calendar.calendarlist.readonly` added (published "In
+  production", since test-mode sign-ins expire after 7 days);
+- an OAuth client of type "Desktop app".
+
+Until the constants are filled in, adding Google says sign-in isn't configured. A build can use its
+own client with `CLOUD_CALENDAR_GOOGLE_CLIENT_ID` / `CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET`.
 
 ## License
 

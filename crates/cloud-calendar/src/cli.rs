@@ -90,10 +90,6 @@ pub struct AddArgs {
     /// The account's name, which prefixes its IDs (default: the provider)
     #[arg(long)]
     pub name: Option<String>,
-    /// Google: the OAuth client ID (Desktop app, Google Calendar API enabled); its secret is
-    /// asked for, or read from stdin, and kept in the keyring
-    #[arg(long)]
-    pub client_id: Option<String>,
     /// HEY: the hey CLI's linked-account selector
     #[arg(long)]
     pub hey_account: Option<String>,

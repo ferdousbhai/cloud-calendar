@@ -1,5 +1,5 @@
 //! End-to-end tests: the real `cloud-calendar` binary on a private D-Bus with a fake
-//! icloud-session and a fake keyring, a fake icloud.com calendar service, and fake `hey`, `gws`
+//! icloud-session, a fake icloud.com calendar service, and fake `hey`, `gws`
 //! and notification commands. HOME and the XDG directories are a fresh directory per test, the
 //! locale is C: nothing touches a real account, keyring, bus or desktop.
 
@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
+/// The Google OAuth client the tests' builds use (the built-in one is empty until filled in).
 const GOOGLE_SECRET: &str = "GOCSPX-test-secret";
 
 struct Home {
@@ -21,12 +22,16 @@ struct Home {
 impl Home {
     /// A fresh home; icloud-session starts signed in or out.
     fn new(name: &str, icloud_signed_in: bool) -> Self {
+        Self::with(name, true, icloud_signed_in)
+    }
+
+    fn with(name: &str, icloud_session_installed: bool, icloud_signed_in: bool) -> Self {
         let dir = std::env::temp_dir().join(format!("cloud-calendar-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("config/cloud-calendar")).unwrap();
         let bus = fakes::Bus::start(&dir.join("bus"));
         let web = fakes::web();
-        let services = fakes::serve(&bus, icloud_signed_in, &web.url);
+        let services = fakes::serve(&bus, icloud_session_installed, icloud_signed_in, &web.url);
         Self { dir, bus, web, services }
     }
 
@@ -55,6 +60,8 @@ impl Home {
             .env("CLOUD_CALENDAR_GWS_COMMAND", tests.join("fake-gws"))
             .env("FAKE_GWS_LOG", self.dir.join("gws.log"))
             .env("FAKE_GWS_SECRET", GOOGLE_SECRET)
+            .env("CLOUD_CALENDAR_GOOGLE_CLIENT_ID", "123.apps.googleusercontent.com")
+            .env("CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET", GOOGLE_SECRET)
             .env("CLOUD_CALENDAR_BROWSER", "true")
             .env("CLOUD_CALENDAR_NOTIFY_COMMAND", tests.join("fake-notify"))
             .env("FAKE_NOTIFY_LOG", self.dir.join("notify.log"))
@@ -83,7 +90,7 @@ impl Home {
     }
 
     fn link_google(&self) {
-        let (v, code) = self.json_in(&["account", "add", "google", "--client-id", "123.apps.googleusercontent.com"], &format!("{GOOGLE_SECRET}\n"), &[]);
+        let (v, code) = self.json(&["account", "add", "google"], &[]);
         assert_eq!(code, 0, "{v}");
     }
 
@@ -143,6 +150,14 @@ fn icloud_signs_in_through_icloud_session_and_reads_the_web_calendar() {
 }
 
 #[test]
+fn icloud_without_icloud_session_says_to_install_it() {
+    let home = Home::with("no-session", false, false);
+    let (v, code) = home.json(&["account", "add", "icloud"], &[]);
+    assert_eq!(code, 3, "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("icloud-session isn't installed"), "{v}");
+}
+
+#[test]
 fn icloud_add_change_delete() {
     let home = Home::new("icloud-write", true);
     home.config("[accounts.icloud]\n");
@@ -187,14 +202,15 @@ fn icloud_add_change_delete() {
 }
 
 #[test]
-fn google_keeps_its_client_secret_in_the_keyring() {
+fn google_signs_in_with_the_built_in_client() {
     let home = Home::new("google", true);
+    // A build without a Google client says so, and links nothing.
+    let (v, code) = home.json(&["account", "add", "google"], &[("CLOUD_CALENDAR_GOOGLE_CLIENT_ID", ""), ("CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET", "")]);
+    assert_eq!(code, 3, "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("isn't configured"), "{v}");
+    assert!(home.file("config/cloud-calendar/config.toml").is_empty());
     home.link_google();
-    let config = home.file("config/cloud-calendar/config.toml");
-    assert!(config.contains("123.apps.googleusercontent.com") && !config.contains(GOOGLE_SECRET), "{config}");
-    let secrets: Vec<_> = home.services.secrets.lock().unwrap().values().cloned().collect();
-    assert_eq!(secrets.len(), 1);
-    assert_eq!((secrets[0].secret.as_str(), secrets[0].attributes["account"].as_str(), secrets[0].attributes["application"].as_str()), (GOOGLE_SECRET, "google", "cloud-calendar"));
+    assert_eq!(home.file("config/cloud-calendar/config.toml").trim(), "[accounts.google]", "no client details kept");
 
     let (v, code) = home.json(&["event", "add", "--calendar", "google:me@gmail.com", "--title", "Call", "--start", "2026-10-15 09:00"], &[]);
     assert_eq!((code, v["data"]["id"].as_str()), (0, Some("google:me@gmail.com/new1")), "{v}");
@@ -221,8 +237,7 @@ fn google_keeps_its_client_secret_in_the_keyring() {
 
     let (v, code) = home.json(&["account", "remove", "google", "--yes"], &[]);
     assert_eq!(code, 0, "{v}");
-    assert!(home.services.secrets.lock().unwrap().is_empty(), "the keyring item is gone");
-    assert!(!home.dir.join("config/cloud-calendar/gws/google").exists(), "and gws's sign-in");
+    assert!(!home.dir.join("config/cloud-calendar/gws/google").exists(), "gws's sign-in is removed");
 }
 
 #[test]

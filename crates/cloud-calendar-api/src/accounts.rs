@@ -2,8 +2,7 @@
 //!
 //! - iCloud: the one sign-in icloud-session holds for every app. Linking asks it to sign in
 //!   (its own window) when it isn't; unlinking leaves it signed in, since other apps share it.
-//! - Google: an OAuth client (its ID in the config, its secret in the keyring), then `gws auth
-//!   login` in the browser.
+//! - Google: `gws auth login` in the browser, with Cloud Calendar's built-in OAuth client.
 //! - HEY: `hey auth login` in the browser, kept in the keyring by hey itself.
 
 use std::sync::mpsc;
@@ -22,7 +21,7 @@ pub const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(600);
 #[derive(Debug, Clone, PartialEq)]
 pub enum Link {
     ICloud,
-    Google { client_id: String, client_secret: String },
+    Google,
     Hey { account: Option<String> },
 }
 
@@ -30,7 +29,7 @@ impl Link {
     pub fn provider(&self) -> &'static str {
         match self {
             Link::ICloud => "icloud",
-            Link::Google { .. } => "google",
+            Link::Google => "google",
             Link::Hey { .. } => "hey",
         }
     }
@@ -38,7 +37,7 @@ impl Link {
 
 fn session_error(e: icloud_session::Error) -> Error {
     match e {
-        icloud_session::Error::Service(m) => Error::new(ErrorKind::AccountUnavailable, format!("iCloud: icloud-session isn't available ({m}); it comes with icloud-for-omarchy")),
+        icloud_session::Error::Service(m) => crate::icloud::service_error(&m),
         other => Error::new(ErrorKind::AccountUnavailable, format!("iCloud: {other}")),
     }
 }
@@ -108,24 +107,11 @@ pub fn add(name: Option<&str>, link: Link) -> Result<(String, String)> {
     let mut cfg = AccountConfig { provider: (name != provider).then(|| provider.to_string()), ..Default::default() };
     match &link {
         Link::ICloud => {}
-        Link::Google { client_id, client_secret } => {
-            if client_id.trim().is_empty() || client_secret.trim().is_empty() {
-                return Err(Error::bad_request("Google needs an OAuth client ID and secret (a Desktop-app client with the Google Calendar API enabled)"));
-            }
-            cfg.client_id = Some(client_id.trim().to_string());
-            crate::keyring::set(&name, crate::google::SECRET_KIND, &format!("Cloud Calendar: Google OAuth client ({name})"), client_secret.trim())?;
-        }
+        // Before anything is saved: a build without a Google client can't sign in.
+        Link::Google => Google::new(&name, &cfg).require_client()?,
         Link::Hey { account } => cfg.account = account.clone().filter(|a| !a.trim().is_empty()),
     }
-    let note = match sign_in(&name, &cfg) {
-        Ok(n) => n,
-        Err(e) => {
-            if provider == "google" {
-                let _ = crate::keyring::forget(&name);
-            }
-            return Err(e);
-        }
-    };
+    let note = sign_in(&name, &cfg)?;
     config.accounts.insert(name.clone(), cfg);
     config::save(&config)?;
     Ok((name, note))
@@ -144,7 +130,6 @@ pub fn remove(name: &str) -> Result<String> {
     let cfg = config.accounts.remove(name).ok_or_else(|| Error::new(ErrorKind::NotFound, format!("no account named {name}")))?;
     let note = match cfg.provider(name) {
         "google" => {
-            crate::keyring::forget(name)?;
             Google::new(name, &cfg).forget().map_err(|e| Error::new(ErrorKind::AccountUnavailable, format!("could not remove the Google sign-in: {e}")))?;
             "signed out of Google on this computer"
         }

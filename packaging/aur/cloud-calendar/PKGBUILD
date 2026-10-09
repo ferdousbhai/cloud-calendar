@@ -12,7 +12,6 @@ checkdepends=('bash' 'dbus')
 options=('!debug' '!lto')  # makepkg's C LTO breaks ring's assembly objects
 optdepends=(
   'icloud-session: iCloud calendars, through the iCloud sign-in your other iCloud apps share'
-  'gnome-keyring: a keyring (Secret Service) for a Google account'\''s OAuth client secret'
   'npm: Google'\''s Workspace CLI (gws) for a Google Calendar account'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")

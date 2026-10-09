@@ -1,6 +1,5 @@
-//! The Accounts window: link iCloud (icloud-session's sign-in), Google (an OAuth client, then the
-//! browser) or HEY (the browser), sign in to one again, or unlink one. The same steps as
-//! `cloud-calendar account …` (`cloud_calendar_api::accounts`), run off the main thread.
+//! The Accounts window: link iCloud (icloud-session's sign-in), Google or HEY (the browser), sign
+//! in to one again, or unlink one. The same steps as `cloud-calendar account …` (`cloud_calendar_api::accounts`), run off the main thread.
 
 use cloud_calendar_api::{self as api, accounts::Link};
 use gtk::{gdk, gio, glib, prelude::*};
@@ -118,7 +117,7 @@ pub fn open(ui: &Rc<Ui>) {
 
     let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let icloud = gtk::Button::with_label("iCloud");
-    let google = gtk::ToggleButton::with_label("Google…");
+    let google = gtk::Button::with_label("Google");
     let hey = gtk::Button::with_label("HEY");
     for b in [icloud.upcast_ref::<gtk::Widget>(), google.upcast_ref(), hey.upcast_ref()] {
         add_row.append(b);
@@ -126,30 +125,11 @@ pub fn open(ui: &Rc<Ui>) {
     root.append(&add_row);
     root.append(&text("iCloud uses the sign-in icloud-session keeps for all your iCloud apps. HEY and Google open your browser.", "note"));
 
-    // Google needs its OAuth client first: the ID goes in the config, the secret in the keyring.
-    let form = gtk::Grid::builder().row_spacing(6).column_spacing(8).visible(false).build();
-    let client_id = gtk::Entry::builder().placeholder_text("…apps.googleusercontent.com").hexpand(true).build();
-    let client_secret = gtk::PasswordEntry::builder().show_peek_icon(true).hexpand(true).build();
-    let go = gtk::Button::with_label("Sign in with Google");
-    go.add_css_class("suggested");
-    form.attach(&text("OAuth client ID", "field-label"), 0, 0, 1, 1);
-    form.attach(&client_id, 1, 0, 1, 1);
-    form.attach(&text("Client secret", "field-label"), 0, 1, 1, 1);
-    form.attach(&client_secret, 1, 1, 1, 1);
-    form.attach(&text("A Desktop-app OAuth client from Google Cloud Console with the Google Calendar API enabled. The secret is kept in your keyring.", "note"), 1, 2, 1, 1);
-    form.attach(&go, 1, 3, 1, 1);
-    root.append(&form);
     root.append(&status);
-    google.connect_toggled(glib::clone!(#[weak] form, move |b| form.set_visible(b.is_active())));
 
     icloud.connect_clicked(glib::clone!(#[strong] win, move |_| win.run("Signing in to iCloud… (finish in the iCloud window)", || api::accounts::add(None, Link::ICloud).map(|(_, note)| note))));
     hey.connect_clicked(glib::clone!(#[strong] win, move |_| win.run("Signing in to HEY… (finish in your browser)", || api::accounts::add(None, Link::Hey { account: None }).map(|(_, note)| note))));
-    go.connect_clicked(glib::clone!(#[strong] win, #[weak] client_id, #[weak] client_secret, #[weak] google, move |_| {
-        let link = Link::Google { client_id: client_id.text().to_string(), client_secret: client_secret.text().to_string() };
-        client_secret.set_text("");
-        google.set_active(false);
-        win.run("Signing in to Google… (finish in your browser)", move || api::accounts::add(None, link).map(|(_, note)| note));
-    }));
+    google.connect_clicked(glib::clone!(#[strong] win, move |_| win.run("Signing in to Google… (finish in your browser)", || api::accounts::add(None, Link::Google).map(|(_, note)| note))));
 
     let close = gtk::Button::with_label("Close");
     close.set_halign(gtk::Align::End);

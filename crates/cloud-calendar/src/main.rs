@@ -4,7 +4,7 @@ mod render;
 use clap::Parser;
 use cloud_calendar_api::{self as api, Calendars, Error, ErrorKind, EventChange, NewEvent, Range, config, provider};
 use serde_json::{Value, json};
-use std::io::{IsTerminal, Read, Write};
+use std::io::{IsTerminal, Write};
 
 use cli::*;
 
@@ -181,25 +181,6 @@ fn status() -> api::Result<Out> {
     Ok(out)
 }
 
-/// A secret from stdin: asked for without echo on a terminal, else read whole.
-fn read_secret(prompt: &str) -> api::Result<String> {
-    let mut secret = String::new();
-    if std::io::stdin().is_terminal() {
-        eprint!("{prompt}");
-        let _ = std::io::stderr().flush();
-        let tty = || std::fs::File::open("/dev/tty").map(std::process::Stdio::from);
-        let echo = |on: bool| tty().map(|t| std::process::Command::new("stty").arg(if on { "echo" } else { "-echo" }).stdin(t).status());
-        let _ = echo(false);
-        let r = std::io::stdin().read_line(&mut secret);
-        let _ = echo(true);
-        eprintln!();
-        r.map_err(|e| Error::bad_request(format!("could not read it: {e}")))?;
-    } else {
-        std::io::stdin().read_to_string(&mut secret).map_err(|e| Error::bad_request(format!("could not read it: {e}")))?;
-    }
-    Ok(secret.trim().to_string())
-}
-
 fn account(a: AccountCommand) -> api::Result<Out> {
     match a {
         AccountCommand::List => {
@@ -213,11 +194,7 @@ fn account(a: AccountCommand) -> api::Result<Out> {
         AccountCommand::Add(args) => {
             let link = match args.provider.as_str() {
                 "icloud" => api::accounts::Link::ICloud,
-                "google" => {
-                    let client_id = args.client_id.clone().ok_or_else(|| Error::bad_request("Google needs --client-id <OAuth client ID>"))?;
-                    let client_secret = read_secret("OAuth client secret: ")?;
-                    api::accounts::Link::Google { client_id, client_secret }
-                }
+                "google" => api::accounts::Link::Google,
                 "hey" => api::accounts::Link::Hey { account: args.hey_account.clone() },
                 other => {
                     let known: Vec<_> = provider::KNOWN_PROVIDERS.iter().map(|(p, d)| format!("{p} ({d})")).collect();

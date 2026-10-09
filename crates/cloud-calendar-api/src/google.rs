@@ -15,9 +15,9 @@
 //! "file" backend is used, which is what gws does on Linux anyway, without touching the one
 //! keyring entry a gws of your own uses.
 //!
-//! Sign-in: `gws auth login --scopes <calendar.events, calendar.calendarlist.readonly>` with a
-//! Google OAuth client ("Desktop app", Calendar API enabled): its ID under the account in
-//! config.toml, its secret in the keyring.
+//! Sign-in: `gws auth login --scopes <calendar.events, calendar.calendarlist.readonly>` with
+//! Cloud Calendar's built-in Google OAuth client (see `GOOGLE_CLIENT_ID`), as cloud-mail signs in
+//! to Gmail: one browser sign-in, nothing to set up in Google Cloud.
 //!
 //! IDs: a calendar is `google:<calendarId>`, an event `google:<calendarId>/<eventId>`; listings
 //! expand repeating events (`singleEvents`), and an occurrence's edits and deletes go to its series
@@ -36,8 +36,15 @@ use crate::provider::{self, AccountStatus, Provider, Run, run_command};
 use crate::types::*;
 
 pub const COMMAND_ENV: &str = "CLOUD_CALENDAR_GWS_COMMAND";
-/// The keyring item holding the OAuth client's secret.
-pub const SECRET_KIND: &str = "google-oauth-client-secret";
+/// Cloud Calendar's own Google OAuth client, a "Desktop app" client in cloud-mail's Google Cloud
+/// project with the Google Calendar API enabled. Google treats a desktop client's secret as
+/// public, so it ships in the binary, as cloud-mail's does. Empty until the maintainer fills them
+/// in; until then adding Google says sign-in isn't configured. `CLOUD_CALENDAR_GOOGLE_CLIENT_ID` /
+/// `_SECRET` let a build use its own client instead.
+pub const GOOGLE_CLIENT_ID: &str = "";
+pub const GOOGLE_CLIENT_SECRET: &str = "";
+pub const CLIENT_ID_ENV: &str = "CLOUD_CALENDAR_GOOGLE_CLIENT_ID";
+pub const CLIENT_SECRET_ENV: &str = "CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET";
 /// The program that opens the sign-in link (default: xdg-open).
 pub const BROWSER_ENV: &str = "CLOUD_CALENDAR_BROWSER";
 /// Events on your calendars, and the list of calendars; nothing else in your Google account.
@@ -53,9 +60,7 @@ pub struct Google {
     name: String,
     command: String,
     dir: PathBuf,
-    client_id: Option<String>,
-    /// The client secret, once read from the keyring.
-    secret: std::sync::Mutex<Option<String>>,
+    client: Option<(String, String)>,
 }
 
 fn text(v: &Value) -> String {
@@ -96,9 +101,12 @@ fn open_browser(url: &str) {
 }
 
 impl Google {
-    pub fn new(name: &str, cfg: &AccountConfig) -> Self {
+    pub fn new(name: &str, _cfg: &AccountConfig) -> Self {
         let command = nonblank(std::env::var(COMMAND_ENV).ok()).unwrap_or_else(|| "gws".into());
-        Self { name: name.into(), command, dir: gws_dir(name), client_id: nonblank(cfg.client_id.clone()), secret: Default::default() }
+        let env = |k| nonblank(std::env::var(k).ok());
+        let builtin = (nonblank(Some(GOOGLE_CLIENT_ID.to_string())), nonblank(Some(GOOGLE_CLIENT_SECRET.to_string())));
+        let client = [(env(CLIENT_ID_ENV), env(CLIENT_SECRET_ENV)), builtin].into_iter().find_map(|(id, secret)| Some((id?, secret?)));
+        Self { name: name.into(), command, dir: gws_dir(name), client }
     }
 
     pub fn dir(&self) -> &Path {
@@ -117,15 +125,15 @@ impl Google {
         self.fail(ErrorKind::AccountUnavailable, format!("Google's Workspace CLI isn't installed (no `{}` on PATH); {INSTALL_HINT}", self.command))
     }
 
-    /// The OAuth client: its ID from the config, its secret from the keyring.
+    /// Fails, saying so, when this build has no Google OAuth client to sign in with.
+    pub fn require_client(&self) -> Result<()> {
+        self.client().map(|_| ())
+    }
+
     fn client(&self) -> Result<(String, String)> {
-        let id = self.client_id.clone().ok_or_else(|| Error::new(ErrorKind::Config, format!("Google: no OAuth client ID for {}; link it again with its client ID and secret", self.name)))?;
-        if let Some(secret) = self.secret.lock().unwrap().clone() {
-            return Ok((id, secret));
-        }
-        let secret = crate::keyring::get(&self.name, SECRET_KIND)?.ok_or_else(|| Error::new(ErrorKind::Config, format!("Google: the OAuth client secret for {} isn't in the keyring; link the account again", self.name)))?;
-        *self.secret.lock().unwrap() = Some(secret.clone());
-        Ok((id, secret))
+        self.client.clone().ok_or_else(|| {
+            Error::new(ErrorKind::Config, format!("Google sign-in isn't configured in this build of Cloud Calendar (no Google OAuth client; set {CLIENT_ID_ENV} and {CLIENT_SECRET_ENV} to use one of your own)"))
+        })
     }
 
     fn gws(&self) -> Result<Command> {

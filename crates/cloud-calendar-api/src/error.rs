@@ -11,7 +11,7 @@ pub enum ErrorKind {
     AccountAuth,
     /// An account's server or command-line tool is missing, failed, or answered something unexpected.
     AccountUnavailable,
-    /// The keyring (Secret Service) isn't running or refused: secrets are kept nowhere else.
+    /// icloud-session is signed in but can't read its sign-in from the keyring.
     KeyringUnavailable,
 }
 

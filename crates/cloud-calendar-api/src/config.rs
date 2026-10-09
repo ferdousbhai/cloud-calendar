@@ -6,7 +6,6 @@
 //! [accounts.icloud]
 //!
 //! [accounts.google]
-//! client_id = "….apps.googleusercontent.com"
 //!
 //! [accounts.hey]
 //! ```
@@ -21,8 +20,7 @@ use crate::error::{Error, ErrorKind, Result};
 pub const DEFAULT_NOTIFY_MINUTES: &[u32] = &[10];
 
 /// One account, `[accounts.<name>]`. The name prefixes its IDs (`icloud:…`). Nothing secret is
-/// kept here: iCloud's sign-in is icloud-session's, HEY's is hey's, and a Google OAuth client's
-/// secret is in the keyring.
+/// kept here: iCloud's sign-in is icloud-session's, HEY's is hey's, Google's is gws's.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct AccountConfig {
     /// Which provider serves it ("icloud", "google" or "hey"); defaults to the account's name.
@@ -31,9 +29,6 @@ pub struct AccountConfig {
     /// HEY: the CLI's linked-account selector; default all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
-    /// Google: the OAuth client ID to sign in with (its secret is in the keyring).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
 }
 
 impl AccountConfig {

@@ -47,6 +47,17 @@ use crate::error::{Error, ErrorKind, Result};
 use crate::provider::{self, AccountStatus, Provider};
 use crate::types::*;
 
+/// icloud-sessiond unreachable: not installed (D-Bus has no such service), or failing.
+pub fn service_error(message: &str) -> Error {
+    if message.contains("org.freedesktop.DBus.Error.ServiceUnknown") {
+        return Error::new(
+            ErrorKind::Config,
+            "iCloud: icloud-session isn't installed. iCloud calendars use the iCloud sign-in it keeps for your iCloud apps; install it from icloud-for-omarchy (the icloud-session package), then add iCloud again",
+        );
+    }
+    Error::new(ErrorKind::AccountUnavailable, format!("iCloud: icloud-session failed ({message})"))
+}
+
 pub struct ICloud {
     name: String,
     session: Mutex<Option<icloud_session::Session>>,
@@ -164,7 +175,7 @@ impl ICloud {
             S::Http { status: 412, .. } => self.fail(ErrorKind::BadRequest, "the event changed elsewhere while it was being saved; reload and try again"),
             S::Http { status, body } => self.fail(ErrorKind::AccountUnavailable, format!("Apple answered HTTP {status}: {}", body.chars().take(200).collect::<String>())),
             S::Offline(m) | S::Network(m) => self.fail(ErrorKind::AccountUnavailable, format!("couldn't reach iCloud ({m})")),
-            S::Service(m) => self.fail(ErrorKind::AccountUnavailable, format!("icloud-session isn't available ({m}); it comes with icloud-for-omarchy")),
+            S::Service(m) => service_error(&m),
             other => self.fail(ErrorKind::AccountUnavailable, other.to_string()),
         }
     }

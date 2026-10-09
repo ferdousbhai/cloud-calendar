@@ -8,7 +8,6 @@ pub mod error;
 pub mod google;
 pub mod hey;
 pub mod icloud;
-pub mod keyring;
 pub mod notify;
 pub mod provider;
 pub mod time;
