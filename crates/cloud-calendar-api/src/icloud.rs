@@ -47,6 +47,28 @@ use crate::error::{Error, ErrorKind, Result};
 use crate::provider::{self, AccountStatus, Provider};
 use crate::types::*;
 
+/// What an icloud-session error means here, every case named so a new one is a compile error.
+/// `account` is the linked account's name, for the sign-in hint.
+pub fn session_error(e: icloud_session::Error, account: &str) -> Error {
+    use icloud_session::Error as S;
+    let fail = |kind: ErrorKind, m: String| Error::new(kind, format!("iCloud: {m}"));
+    match e {
+        S::SignInRequired => fail(ErrorKind::AccountAuth, format!("signed out; sign in again (`cloud-calendar account login {account}`, or in the app)")),
+        // icloud-sessiond is still signed in but can't read its cookie jar from the keyring.
+        S::KeyringUnavailable(m) => fail(ErrorKind::KeyringUnavailable, format!("icloud-session can't read its sign-in from the keyring ({m}); unlock or start the keyring")),
+        S::Http { status: 404, .. } => fail(ErrorKind::NotFound, "no such event or calendar (deleted elsewhere?)".into()),
+        S::Http { status: 412, .. } => fail(ErrorKind::BadRequest, "the event changed elsewhere while it was being saved; reload and try again".into()),
+        S::Http { status, body } => fail(ErrorKind::AccountUnavailable, format!("Apple answered HTTP {status}: {}", body.chars().take(200).collect::<String>())),
+        S::Offline(m) | S::Network(m) => fail(ErrorKind::AccountUnavailable, format!("couldn't reach iCloud ({m})")),
+        // Apple answered, but not in a shape this version reads: neither offline nor signed out.
+        S::BadResponse(m) => fail(ErrorKind::AccountUnavailable, format!("Apple answered something this version can't read ({m})")),
+        S::Service(m) => service_error(&m),
+        // Calendars never use Find My's own session.
+        S::FindMyAuthRequired => fail(ErrorKind::AccountUnavailable, "icloud-session asked for Find My's password, which calendars don't use".into()),
+        S::Io(e) => fail(ErrorKind::AccountUnavailable, format!("icloud-session: {e}")),
+    }
+}
+
 /// icloud-sessiond unreachable: not installed (D-Bus has no such service), or failing.
 pub fn service_error(message: &str) -> Error {
     if message.contains("org.freedesktop.DBus.Error.ServiceUnknown") {
@@ -182,21 +204,10 @@ impl ICloud {
     }
 
     fn map(&self, e: icloud_session::Error) -> Error {
-        use icloud_session::Error as S;
-        match e {
-            S::SignInRequired => {
-                *self.session.lock().unwrap() = None;
-                self.fail(ErrorKind::AccountAuth, format!("signed out; sign in again (`cloud-calendar account login {}`, or in the app)", self.name))
-            }
-            // icloud-sessiond is still signed in but can't read its cookie jar from the keyring.
-            S::KeyringUnavailable(m) => self.fail(ErrorKind::KeyringUnavailable, format!("icloud-session can't read its sign-in from the keyring ({m}); unlock or start the keyring")),
-            S::Http { status: 404, .. } => self.fail(ErrorKind::NotFound, "no such event or calendar (deleted elsewhere?)"),
-            S::Http { status: 412, .. } => self.fail(ErrorKind::BadRequest, "the event changed elsewhere while it was being saved; reload and try again"),
-            S::Http { status, body } => self.fail(ErrorKind::AccountUnavailable, format!("Apple answered HTTP {status}: {}", body.chars().take(200).collect::<String>())),
-            S::Offline(m) | S::Network(m) => self.fail(ErrorKind::AccountUnavailable, format!("couldn't reach iCloud ({m})")),
-            S::Service(m) => service_error(&m),
-            other => self.fail(ErrorKind::AccountUnavailable, other.to_string()),
+        if matches!(e, icloud_session::Error::SignInRequired) {
+            *self.session.lock().unwrap() = None;
         }
+        session_error(e, &self.name)
     }
 
     fn session(&self) -> Result<icloud_session::Session> {
