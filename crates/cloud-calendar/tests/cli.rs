@@ -251,7 +251,7 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
 
     let (v, code) = home.json(&["event", "add", "--calendar", "hey:11", "--title", "Dinner", "--start", "2026-10-15 19:00", "--end", "2026-10-15 21:00", "--notes", "bring wine"], &[]);
     assert_eq!((code, v["data"]["id"].as_str()), (0, Some("hey:777")), "{v}");
-    let (v, code) = home.json(&["event", "add", "--calendar", "hey:11", "--title", "Away", "--start", "2026-10-20", "--end", "2026-10-23"], &[]);
+    let (v, code) = home.json(&["event", "add", "--calendar", "hey:11", "--title=-Away", "--start", "2026-10-20", "--end", "2026-10-23"], &[]);
     assert_eq!(code, 0, "{v}");
     let (v, code) = home.json(&["event", "edit", "hey:500~20261013T060000Z", "--title", "Gym!"], &[]);
     assert_eq!(code, 2, "a repeating HEY event is read-only: {v}");
@@ -265,8 +265,8 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     assert_eq!(
         writes,
         vec![
-            "event\tadd\tDinner\t--calendar\t11\t--time-zone\tUTC\t--starts-on\t2026-10-15\t--start-time\t19:00\t--ends-on\t2026-10-15\t--end-time\t21:00\t--notes\tbring wine",
-            "event\tadd\tAway\t--calendar\t11\t--all-day\t--starts-on\t2026-10-20\t--ends-on\t2026-10-22",
+            "event\tadd\t--title=Dinner\t--calendar\t11\t--time-zone\tUTC\t--starts-on\t2026-10-15\t--start-time\t19:00\t--ends-on\t2026-10-15\t--end-time\t21:00\t--notes\tbring wine",
+            "event\tadd\t--title=-Away\t--calendar\t11\t--all-day\t--starts-on\t2026-10-20\t--ends-on\t2026-10-22",
             "event\tedit\t401\t--location\t\t--time-zone\tUTC\t--all-day=false\t--starts-on\t2026-10-14\t--start-time\t13:00\t--ends-on\t2026-10-14\t--end-time\t14:30",
             "event\tdelete\t500",
         ]
@@ -340,5 +340,22 @@ fn agenda_days_must_be_in_range() {
     for days in ["0", "367"] {
         let (v, code) = home.json(&["agenda", "--days", days], &[]);
         assert_eq!((code, v["error"]["code"].as_str()), (2, Some("bad_request")), "{v}");
+    }
+}
+
+#[test]
+fn out_of_range_dates_and_lengths_are_refused() {
+    let home = Home::new("ranges", true);
+    home.config("[accounts.hey]\n");
+    for args in [
+        &["agenda", "--from", "+999999999999"][..],
+        &["agenda", "--from", "+99999999999999999999"],
+        &["week", "+999999999999"],
+        &["event", "add", "--calendar", "hey:11", "--title", "X", "--start", "2026-10-15 09:00", "--length", "100000000d"],
+        &["event", "add", "--calendar", "hey:11", "--title", "X", "--start", "2026-10-15 09:00", "--length", "1000000000000000m"],
+        &["event", "add", "--calendar", "hey:11", "--title", "X", "--start", "9999-12-31 23:30", "--length", "1h"],
+    ] {
+        let (v, code) = home.json(args, &[]);
+        assert_eq!((code, v["error"]["code"].as_str()), (2, Some("bad_request")), "{args:?}: {v}");
     }
 }

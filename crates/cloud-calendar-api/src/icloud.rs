@@ -94,7 +94,8 @@ pub fn event_span(e: &Value, local: &Tz) -> Result<(Time, Time)> {
     let end = read_apple_date(&e["endDate"]).ok_or_else(|| bad("end"))?;
     if e["allDay"] == json!(true) {
         let (s, x) = (start.date(), end.date());
-        return Ok((Time::Date(s), Time::Date(x.max(s + chrono::Days::new(1)))));
+        let next = s.checked_add_days(chrono::Days::new(1)).ok_or_else(|| bad("start date"))?;
+        return Ok((Time::Date(s), Time::Date(x.max(next))));
     }
     let zone: Tz = match e["tz"].as_str().filter(|z| !z.is_empty()) {
         Some(z) => z.parse().map_err(|_| bad(&format!("time zone ({z})")))?,

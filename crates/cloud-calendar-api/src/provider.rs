@@ -140,9 +140,10 @@ pub(crate) fn changed_span(change: &EventChange, start: Time, end: Time) -> Resu
     let (s, e) = (change.start.unwrap_or(start), change.end.unwrap_or(end));
     // A new start alone keeps the event's length.
     let e = if change.start.is_some() && change.end.is_none() && s.is_date() == start.is_date() {
+        let out = || Error::bad_request("the new end is out of range");
         match (start, end, s) {
-            (Time::At(a), Time::At(b), Time::At(n)) => Time::At(n + (b - a)),
-            (Time::Date(a), Time::Date(b), Time::Date(n)) => Time::Date(n + (b - a)),
+            (Time::At(a), Time::At(b), Time::At(n)) => Time::At(n.checked_add_signed(b - a).ok_or_else(out)?),
+            (Time::Date(a), Time::Date(b), Time::Date(n)) => Time::Date(n.checked_add_signed(b - a).ok_or_else(out)?),
             _ => e,
         }
     } else {

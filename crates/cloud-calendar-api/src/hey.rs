@@ -323,7 +323,8 @@ impl Provider for Hey {
     fn create(&self, event: &NewEvent) -> Result<String> {
         check_span(&event.start, &event.end)?;
         let cal = provider::local_id(&self.name, "HEY", &event.calendar_id)?;
-        let mut args = Self::args(&["event", "add", &event.title, "--calendar", cal]);
+        // `--title=` keeps a title that starts with "-" from being read as a flag.
+        let mut args = Self::args(&["event", "add", &format!("--title={}", event.title), "--calendar", cal]);
         args.extend(span_args(&event.start, &event.end, &crate::icloud::zone()?).into_iter().filter(|a| a != "--all-day=false"));
         if let Some(l) = event.location.as_deref().filter(|l| !l.trim().is_empty()) {
             args.extend(["--location".into(), l.to_string()]);
@@ -345,7 +346,7 @@ impl Provider for Hey {
         }
         let mut args = Self::args(&["event", "edit", &target]);
         if let Some(t) = &change.title {
-            args.extend(["--title".into(), t.clone()]);
+            args.push(format!("--title={t}"));
         }
         if let Some(l) = &change.location {
             args.extend(["--location".into(), l.trim().to_string()]);

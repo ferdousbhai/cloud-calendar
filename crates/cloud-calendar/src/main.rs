@@ -135,16 +135,18 @@ fn run(command: Command) -> api::Result<Out> {
                 return Err(Error::bad_request(format!("--days must be 1 to 366, not {}", a.days)));
             }
             let from = api::time::parse_date(&a.from, today())?;
-            agenda(Range::days(from, a.days), format!("{} days from {from}", a.days))
+            agenda(Range::days(from, a.days)?, format!("{} days from {from}", a.days))
         }
-        Command::Today => agenda(Range::days(today(), 1), format!("today, {}", today())),
+        Command::Today => agenda(Range::days(today(), 1)?, format!("today, {}", today())),
         Command::Week { date } => {
             let day = match date {
                 Some(d) => api::time::parse_date(&d, today())?,
                 None => today(),
             };
-            let monday = day - chrono::Days::new(u64::from(chrono::Datelike::weekday(&day).num_days_from_monday()));
-            agenda(Range::days(monday, 7), format!("the week of {monday}"))
+            let monday = day
+                .checked_sub_days(chrono::Days::new(u64::from(chrono::Datelike::weekday(&day).num_days_from_monday())))
+                .ok_or_else(|| Error::bad_request(format!("the week of {day} is out of range")))?;
+            agenda(Range::days(monday, 7)?, format!("the week of {monday}"))
         }
         Command::Event(e) => event(e),
         Command::Notify { refresh } => {
@@ -230,8 +232,8 @@ fn event(e: EventCommand) -> api::Result<Out> {
             let start = api::time::parse_time(&a.start, today)?;
             let end = match (&a.end, &a.length) {
                 (Some(e), _) => api::time::parse_time(e, start.local_date())?,
-                (None, Some(l)) => api::time::add_length(&start, api::time::parse_length(l)?),
-                (None, None) => api::time::add_length(&start, chrono::Duration::hours(if start.is_date() { 24 } else { 1 })),
+                (None, Some(l)) => api::time::add_length(&start, api::time::parse_length(l)?)?,
+                (None, None) => api::time::add_length(&start, chrono::Duration::hours(if start.is_date() { 24 } else { 1 }))?,
             };
             api::check_span(&start, &end)?;
             let id = c.create(&NewEvent { calendar_id: a.calendar, title: a.title.clone(), start, end, location: a.location, notes: a.notes })?;

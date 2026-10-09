@@ -6,17 +6,31 @@ use chrono::{DateTime, Local, NaiveDate, NaiveTime, TimeZone, Utc};
 use crate::error::{Error, Result};
 use crate::types::Time;
 
-/// A day: `today`, `tomorrow`, `yesterday`, `+N` / `-N` days, or `YYYY-MM-DD`.
+/// The longest length an event can be given (`--length`).
+pub const MAX_LENGTH_DAYS: i64 = 366;
+
+/// A date in years 1 to 9999, the span every calendar here can write, or an error naming `what`.
+pub fn bounded(d: NaiveDate, what: &str) -> Result<NaiveDate> {
+    if (1..=9999).contains(&chrono::Datelike::year(&d)) {
+        Ok(d)
+    } else {
+        Err(Error::bad_request(format!("{what} is out of range (years 1 to 9999)")))
+    }
+}
+
+/// A day: `today`, `tomorrow`, `yesterday`, `+N` / `-N` days, or `YYYY-MM-DD`, in years 1 to 9999.
 pub fn parse_date(s: &str, today: NaiveDate) -> Result<NaiveDate> {
     let s = s.trim().to_ascii_lowercase();
-    let shifted = |n: i64| today.checked_add_signed(chrono::Duration::days(n)).ok_or_else(|| Error::bad_request(format!("{s} is out of range")));
-    match s.as_str() {
+    let out_of_range = || Error::bad_request(format!("{s} is out of range (years 1 to 9999)"));
+    let shifted = |n: i64| chrono::Duration::try_days(n).and_then(|d| today.checked_add_signed(d)).ok_or_else(out_of_range);
+    let date = match s.as_str() {
         "today" => Ok(today),
         "tomorrow" => shifted(1),
         "yesterday" => shifted(-1),
-        _ if (s.starts_with('+') || s.starts_with('-')) && s[1..].chars().all(|c| c.is_ascii_digit()) && s.len() > 1 => shifted(s.parse().unwrap_or(0)),
+        _ if (s.starts_with('+') || s.starts_with('-')) && s[1..].chars().all(|c| c.is_ascii_digit()) && s.len() > 1 => shifted(s.parse().map_err(|_| out_of_range())?),
         _ => NaiveDate::parse_from_str(&s, "%Y-%m-%d").map_err(|_| Error::bad_request(format!("\"{s}\" isn't a date (YYYY-MM-DD, today, tomorrow or +N)"))),
-    }
+    }?;
+    bounded(date, &s)
 }
 
 fn parse_clock(s: &str) -> Option<NaiveTime> {
@@ -36,6 +50,7 @@ pub fn local_instant(d: NaiveDate, t: NaiveTime) -> Result<DateTime<Utc>> {
 pub fn parse_time(s: &str, today: NaiveDate) -> Result<Time> {
     let s = s.trim();
     if let Ok(t) = DateTime::parse_from_rfc3339(s) {
+        bounded(t.with_timezone(&Utc).date_naive(), s)?;
         return Ok(Time::At(t.with_timezone(&Utc)));
     }
     if let Some(t) = parse_clock(s) {
@@ -55,21 +70,24 @@ pub fn parse_time(s: &str, today: NaiveDate) -> Result<Time> {
     }
 }
 
-/// A length: `90m`, `1h`, `1h30m`, `2d`.
+/// A length: `90m`, `1h`, `1h30m`, `2d`, at most `MAX_LENGTH_DAYS` days.
 pub fn parse_length(s: &str) -> Result<chrono::Duration> {
     let bad = || Error::bad_request(format!("\"{s}\" isn't a length (e.g. 30m, 1h, 1h30m, 2d)"));
+    let too_long = || Error::bad_request(format!("\"{s}\" is longer than {MAX_LENGTH_DAYS} days"));
+    let max = MAX_LENGTH_DAYS * 86_400;
     let (mut total, mut num) = (0i64, String::new());
     for c in s.trim().to_ascii_lowercase().chars() {
         match c {
             '0'..='9' => num.push(c),
             'd' | 'h' | 'm' => {
-                let n: i64 = num.parse().map_err(|_| bad())?;
+                let n: i64 = num.parse().map_err(|_| if num.is_empty() { bad() } else { too_long() })?;
                 num.clear();
-                total += n * match c {
+                let unit = match c {
                     'd' => 86_400,
                     'h' => 3_600,
                     _ => 60,
                 };
+                total = n.checked_mul(unit).and_then(|x| total.checked_add(x)).filter(|t| *t <= max).ok_or_else(too_long)?;
             }
             _ => return Err(bad()),
         }
@@ -80,12 +98,15 @@ pub fn parse_length(s: &str) -> Result<chrono::Duration> {
     Ok(chrono::Duration::seconds(total))
 }
 
-/// The end for a start and a length: whole days for an all-day start.
-pub fn add_length(start: &Time, len: chrono::Duration) -> Time {
-    match start {
-        Time::At(t) => Time::At(*t + len),
-        Time::Date(d) => Time::Date(*d + chrono::Days::new(len.num_days().max(1) as u64)),
-    }
+/// The end for a start and a length: whole days for an all-day start; years 1 to 9999.
+pub fn add_length(start: &Time, len: chrono::Duration) -> Result<Time> {
+    let out = || Error::bad_request("the end is out of range (years 1 to 9999)");
+    let end = match start {
+        Time::At(t) => Time::At(t.checked_add_signed(len).ok_or_else(out)?),
+        Time::Date(d) => Time::Date(d.checked_add_days(chrono::Days::new(len.num_days().max(1) as u64)).ok_or_else(out)?),
+    };
+    bounded(end.local_date(), "the end")?;
+    Ok(end)
 }
 
 #[cfg(test)]
@@ -104,6 +125,11 @@ mod tests {
         assert_eq!(parse_date("-1", day(9)).unwrap(), day(8));
         assert_eq!(parse_date("2026-10-20", day(9)).unwrap(), day(20));
         assert!(parse_date("next week", day(9)).is_err());
+        assert!(parse_date("+999999999999", day(9)).is_err());
+        assert!(parse_date("+99999999999999999999", day(9)).is_err());
+        assert!(parse_length("100000000d").is_err());
+        assert!(parse_length("1000000000000000m").is_err());
+        assert_eq!(parse_length("366d").unwrap(), chrono::Duration::days(366));
     }
 
     #[test]

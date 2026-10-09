@@ -45,7 +45,8 @@ fn typed(all_day: bool, sd: &str, st: &str, ed: &str, et: &str) -> api::Result<(
     if all_day {
         let s = date(sd)?;
         let last = if ed.trim().is_empty() { s } else { date(ed)? };
-        let (start, end) = (Time::Date(s), Time::Date(last + chrono::Days::new(1)));
+        let after = last.checked_add_days(chrono::Days::new(1)).ok_or_else(|| api::Error::bad_request("the last day is out of range"))?;
+        let (start, end) = (Time::Date(s), Time::Date(api::time::bounded(after, "the last day")?));
         api::check_span(&start, &end)?;
         return Ok((start, end));
     }
@@ -54,7 +55,7 @@ fn typed(all_day: bool, sd: &str, st: &str, ed: &str, et: &str) -> api::Result<(
     }
     let at = |d: &str, t: &str| api::time::parse_time(&format!("{} {}", date(d)?.format("%Y-%m-%d"), t.trim()), today);
     let start = at(sd, st)?;
-    let end = if et.trim().is_empty() { api::time::add_length(&start, chrono::Duration::hours(1)) } else { at(if ed.trim().is_empty() { sd } else { ed }, et)? };
+    let end = if et.trim().is_empty() { api::time::add_length(&start, chrono::Duration::hours(1))? } else { at(if ed.trim().is_empty() { sd } else { ed }, et)? };
     api::check_span(&start, &end)?;
     Ok((start, end))
 }

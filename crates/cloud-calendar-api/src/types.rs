@@ -64,10 +64,19 @@ pub struct Range {
 }
 
 impl Range {
-    /// Local days `from` through `from + days - 1`.
-    pub fn days(from: NaiveDate, days: u32) -> Self {
-        let to = from + chrono::Days::new(u64::from(days.max(1)));
-        Self { start: local_midnight(from), end: local_midnight(to) }
+    /// Local days `from` through `from + days - 1`, or an error past the dates a calendar holds.
+    pub fn days(from: NaiveDate, days: u32) -> crate::Result<Self> {
+        let to = from
+            .checked_add_days(chrono::Days::new(u64::from(days.max(1))))
+            .ok_or_else(|| crate::Error::bad_request(format!("{days} days from {from} is out of range")))?;
+        Ok(Self { start: local_midnight(from), end: local_midnight(to) })
+    }
+
+    /// One local day, for sorting events into the days of a window already read. It can't fail:
+    /// at the last date chrono holds, the day ends there.
+    pub fn day(d: NaiveDate) -> Self {
+        let next = d.checked_add_days(chrono::Days::new(1)).unwrap_or(NaiveDate::MAX);
+        Self { start: local_midnight(d), end: local_midnight(next) }
     }
 
     /// Whether an event from `start` to `end` overlaps the window.

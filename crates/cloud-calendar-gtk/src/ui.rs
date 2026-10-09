@@ -177,7 +177,10 @@ impl Ui {
         {
             let mut s = self.state.borrow_mut();
             let days = if s.agenda { i64::from(AGENDA_DAYS) } else { 7 };
-            s.anchor += chrono::Duration::days(by * days);
+            // Stays within the years every calendar here can hold.
+            if let Some(a) = chrono::Duration::try_days(by * days).and_then(|d| s.anchor.checked_add_signed(d)).and_then(|a| api::time::bounded(a, "").ok()) {
+                s.anchor = a;
+            }
         }
         self.reload();
     }
@@ -198,7 +201,7 @@ impl Ui {
         }
     }
 
-    fn range(&self) -> Range {
+    fn range(&self) -> api::Result<Range> {
         let s = self.state.borrow();
         if s.agenda { Range::days(s.anchor, AGENDA_DAYS) } else { Range::days(monday(s.anchor), 7) }
     }
@@ -229,7 +232,10 @@ impl Ui {
         if !self.calendars_complete.get() {
             self.load_calendars();
         }
-        let range = self.range();
+        let range = match self.range() {
+            Ok(r) => r,
+            Err(e) => return self.content.set_child(Some(&label(&e.message, "empty"))),
+        };
         let (agenda, anchor) = {
             let s = self.state.borrow();
             (s.agenda, s.anchor)
@@ -320,7 +326,7 @@ impl Ui {
             head.set_tooltip_text(Some("New event on this day"));
             head.connect_clicked(glib::clone!(#[weak(rename_to = ui)] self, move |_| ui.new_event(Some(day))));
             col.append(&head);
-            let range = Range::days(day, 1);
+            let range = Range::day(day);
             for e in events.iter().filter(|e| range.overlaps(&e.start, &e.end)) {
                 col.append(&self.event_button(e, false));
             }
@@ -335,8 +341,8 @@ impl Ui {
         let first = range.start.with_timezone(&Local).date_naive();
         let mut any = false;
         for i in 0..u64::from(AGENDA_DAYS) {
-            let day = first + chrono::Days::new(i);
-            let day_range = Range::days(day, 1);
+            let Some(day) = first.checked_add_days(chrono::Days::new(i)) else { break };
+            let day_range = Range::day(day);
             let todays: Vec<&Event> = events.iter().filter(|e| day_range.overlaps(&e.start, &e.end)).collect();
             if todays.is_empty() {
                 continue;
