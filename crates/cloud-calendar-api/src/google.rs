@@ -86,6 +86,21 @@ pub fn when_json(t: &Time) -> Value {
     }
 }
 
+/// `when_json` for a patch: Google merges a patch's nested objects into the event's, so the
+/// field of the other kind is cleared explicitly, or a move between all-day and timed keeps both
+/// `date` and `dateTime` and is rejected.
+fn patch_when_json(t: &Time) -> Value {
+    let mut v = when_json(t);
+    match t {
+        Time::At(_) => v["date"] = Value::Null,
+        Time::Date(_) => {
+            v["dateTime"] = Value::Null;
+            v["timeZone"] = Value::Null;
+        }
+    }
+    v
+}
+
 /// cloud-calendar's own gws directory for an account, beside its config file.
 pub fn gws_dir(name: &str) -> PathBuf {
     crate::config::config_dir().join("gws").join(name)
@@ -318,6 +333,9 @@ impl Google {
                     continue;
                 }
                 let (Some(start), Some(end)) = (parse_when(&e["start"]), parse_when(&e["end"])) else { continue };
+                if !range.overlaps(&start, &end) {
+                    continue;
+                }
                 let recurring = e["recurringEventId"].as_str().is_some_and(|r| !r.is_empty());
                 let suffix = if recurring { provider::occurrence_suffix(&start) } else { String::new() };
                 let title = text(&e["summary"]);
@@ -451,8 +469,8 @@ impl Provider for Google {
                 return Err(self.fail(ErrorKind::AccountUnavailable, "the event has no start or end to move"));
             };
             let (s, e) = provider::changed_span(change, s, e)?;
-            body.insert("start".into(), when_json(&s));
-            body.insert("end".into(), when_json(&e));
+            body.insert("start".into(), patch_when_json(&s));
+            body.insert("end".into(), patch_when_json(&e));
         }
         if body.is_empty() {
             return Ok(());
