@@ -1,3 +1,4 @@
+mod accounts;
 mod editor;
 mod theme;
 mod ui;

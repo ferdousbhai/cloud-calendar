@@ -27,8 +27,9 @@ pub struct Ui {
     content: gtk::ScrolledWindow,
     agenda: gtk::ToggleButton,
     state: RefCell<State>,
-    pub calendars: Option<Calendars>,
-    setup_error: Option<String>,
+    /// The linked accounts, read again after any account change.
+    pub calendars: RefCell<Option<Calendars>>,
+    setup_error: RefCell<Option<String>>,
     /// Calendars you can add events to, once read.
     pub writable: RefCell<Vec<Calendar>>,
 }
@@ -75,9 +76,10 @@ impl Ui {
         spacer.set_hexpand(true);
         let agenda = gtk::ToggleButton::with_label("Agenda");
         let reload = gtk::Button::with_label("Reload");
+        let accounts = gtk::Button::with_label("Accounts");
         let add = gtk::Button::with_label("+ New event");
         add.add_css_class("suggested");
-        for w in [brand.upcast_ref::<gtk::Widget>(), prev.upcast_ref(), today.upcast_ref(), next.upcast_ref(), period.upcast_ref(), spacer.upcast_ref(), agenda.upcast_ref(), reload.upcast_ref(), add.upcast_ref()] {
+        for w in [brand.upcast_ref::<gtk::Widget>(), prev.upcast_ref(), today.upcast_ref(), next.upcast_ref(), period.upcast_ref(), spacer.upcast_ref(), agenda.upcast_ref(), reload.upcast_ref(), accounts.upcast_ref(), add.upcast_ref()] {
             toolbar.append(w);
         }
         prev.set_tooltip_text(Some("Previous (h)"));
@@ -99,11 +101,6 @@ impl Ui {
         root.append(&content);
         window.set_child(Some(&root));
 
-        let (calendars, setup_error) = match api::config::load() {
-            Ok(c) if c.accounts.is_empty() => (None, Some(setup_text(None))),
-            Ok(c) => (Some(Calendars::from_config(&c)), None),
-            Err(e) => (None, Some(setup_text(Some(&e.message)))),
-        };
         let ui = Rc::new(Self {
             window,
             period,
@@ -111,8 +108,8 @@ impl Ui {
             content,
             agenda,
             state: RefCell::new(State { anchor: Local::now().date_naive(), agenda: false, generation: 0 }),
-            calendars,
-            setup_error,
+            calendars: RefCell::new(None),
+            setup_error: RefCell::new(None),
             writable: RefCell::new(Vec::new()),
         });
 
@@ -144,9 +141,23 @@ impl Ui {
         }));
         ui.window.add_controller(keys);
 
-        ui.load_calendars();
-        ui.reload();
+        accounts.connect_clicked(glib::clone!(#[weak] ui, move |_| crate::accounts::open(&ui)));
+        ui.accounts_changed();
         ui
+    }
+
+    /// Reads the linked accounts again (after one was added, signed in or removed) and reloads.
+    pub fn accounts_changed(self: &Rc<Self>) {
+        let (calendars, error) = match api::config::load() {
+            Ok(c) if c.accounts.is_empty() => (None, Some(setup_text(None))),
+            Ok(c) => (Some(Calendars::from_config(&c)), None),
+            Err(e) => (None, Some(setup_text(Some(&e.message)))),
+        };
+        *self.calendars.borrow_mut() = calendars;
+        *self.setup_error.borrow_mut() = error;
+        self.writable.borrow_mut().clear();
+        self.load_calendars();
+        self.reload();
     }
 
     pub fn present(&self) {
@@ -168,7 +179,7 @@ impl Ui {
     }
 
     fn new_event(self: &Rc<Self>, day: Option<NaiveDate>) {
-        if self.calendars.is_some() {
+        if self.calendars.borrow().is_some() {
             let day = day.unwrap_or_else(|| {
                 let today = Local::now().date_naive();
                 let s = self.state.borrow();
@@ -184,7 +195,7 @@ impl Ui {
     }
 
     fn load_calendars(self: &Rc<Self>) {
-        let Some(cals) = self.calendars.clone() else { return };
+        let Some(cals) = self.calendars.borrow().clone() else { return };
         let ui = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
             let Ok(listing) = gio::spawn_blocking(move || cals.calendars()).await else { return };
@@ -208,8 +219,8 @@ impl Ui {
             let m = monday(anchor);
             format!("{} – {}", m.format("%-d %b"), (m + chrono::Days::new(6)).format("%-d %b %Y"))
         });
-        let Some(cals) = self.calendars.clone() else {
-            let text = label(self.setup_error.as_deref().unwrap_or(""), "setup");
+        let Some(cals) = self.calendars.borrow().clone() else {
+            let text = label(self.setup_error.borrow().as_deref().unwrap_or(""), "setup");
             text.set_selectable(true);
             self.content.set_child(Some(&text));
             return;
@@ -323,8 +334,5 @@ impl Ui {
 
 fn setup_text(error: Option<&str>) -> String {
     let problem = error.map(|e| format!("{e}\n\n")).unwrap_or_default();
-    format!(
-        "{problem}No calendar accounts are linked yet. Add one in a terminal, then reopen Cloud Calendar:\n\n  cloud-calendar account add icloud --username you@icloud.com\n  cloud-calendar account add google\n  cloud-calendar account add hey\n\nThe accounts live in {}.",
-        api::config::path().display()
-    )
+    format!("{problem}No calendar accounts are linked yet. Add iCloud, Google or HEY under Accounts.")
 }

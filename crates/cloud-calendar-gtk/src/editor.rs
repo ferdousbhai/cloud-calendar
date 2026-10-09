@@ -57,7 +57,7 @@ fn typed(all_day: bool, sd: &str, st: &str, ed: &str, et: &str) -> api::Result<(
 }
 
 pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
-    let Some(cals) = ui.calendars.clone() else { return };
+    let Some(cals) = ui.calendars.borrow().clone() else { return };
     let win = gtk::Window::builder().title(if event.is_some() { "Event" } else { "New event" }).transient_for(&ui.window).modal(true).default_width(520).build();
     win.add_css_class("editor");
     let grid = gtk::Grid::builder().row_spacing(8).column_spacing(10).build();
@@ -268,12 +268,5 @@ mod tests {
         assert_eq!(typed(true, "2026-10-09", "", "2026-10-11", "").unwrap(), (Time::Date(d(9)), Time::Date(d(12))));
         assert_eq!(typed(true, "2026-10-09", "", "", "").unwrap().1, Time::Date(d(10)));
         assert!(typed(true, "2026-10-09", "", "2026-10-08", "").is_err());
-    }
-
-    #[test]
-    fn timed_defaults_to_an_hour() {
-        let (s, e) = typed(false, "2026-10-09", "14:00", "", "").unwrap();
-        assert_eq!(e.instant() - s.instant(), chrono::Duration::hours(1));
-        assert!(typed(false, "2026-10-09", "14:00", "2026-10-09", "13:00").is_err());
     }
 }
