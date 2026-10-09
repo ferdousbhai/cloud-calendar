@@ -16,8 +16,9 @@
 //! auth status` says which. Signing in here insists on the keyring, and `HEY_NO_KEYRING` is never
 //! passed on.
 //!
-//! IDs: a calendar is `hey:<calendar id>`, an event `hey:<event id>`, an occurrence of a repeating
-//! event `hey:<series id>~<day>`, whose edits and deletes go to the series.
+//! IDs: a calendar is `hey:<calendar id>`, an event `hey:<event id>@<UTC day it starts on>` (the
+//! day `hey event edit` needs to find it), an occurrence of a repeating event
+//! `hey:<series id>~<day>`, whose deletes go to the series.
 
 use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde_json::{Value, json};
@@ -144,9 +145,15 @@ impl Hey {
         if status.success() {
             return Err(self.fail(ErrorKind::AccountUnavailable, format!("`hey {what}` answered something unexpected (a newer hey CLI?)")));
         }
-        let mut message = text(&envelope["error"]);
+        // With --json, hey writes its error envelope, indented, to stderr (hey-cli
+        // internal/output/writer.go `Err`): `error`, and a `hint` saying what to do.
+        let failure: Value = if envelope["ok"] == json!(false) { envelope } else { serde_json::from_str(stderr.trim()).unwrap_or(Value::Null) };
+        let mut message = text(&failure["error"]);
+        if let Some(hint) = nonempty(text(&failure["hint"])).filter(|_| !message.is_empty()) {
+            message = format!("{message} ({hint})");
+        }
         if message.is_empty() {
-            message = stderr.lines().last().unwrap_or("").to_string();
+            message = stderr.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("").to_string();
         }
         if message.is_empty() {
             message = format!("`hey {what}` failed ({status})");
@@ -208,7 +215,9 @@ impl Hey {
         let local = match &series {
             Some(s) => format!("{s}{}", provider::occurrence_suffix(&start)),
             None if recurring => format!("{}{}", id_of(&row["id"])?, provider::occurrence_suffix(&start)),
-            None => id_of(&row["id"])?,
+            // The UTC day it starts on rides along: `hey event edit <id> <day>` finds an event on
+            // that day, where without one it looks only a year either side of today.
+            None => format!("{}@{}", id_of(&row["id"])?, instant(&row["starts_at"])?.date_naive().format("%Y-%m-%d")),
         };
         let cal = &row["calendar"];
         let title = nonempty(text(&row["title"])).unwrap_or_else(|| "(no title)".into());
@@ -223,19 +232,26 @@ impl Hey {
             start,
             end,
             location: nonempty(text(&row["location"])),
-            notes: nonempty(text(&row["notes"])),
+            // An event's notes are hey-sdk's `description` (`notes` is a time track's).
+            notes: nonempty(text(&row["description"])),
             recurring,
         })
     }
 
-    /// The HEY event id an action reaches: an occurrence's series, else the event.
-    fn target(&self, id: &str) -> Result<(String, bool)> {
+    /// What an ID reaches: the HEY event id (an occurrence's series), whether it was an
+    /// occurrence, and the UTC day the event starts on when the ID carries it (`<id>@YYYY-MM-DD`).
+    fn target(&self, id: &str) -> Result<(String, bool, Option<String>)> {
         let local = provider::local_id(&self.name, "HEY", id)?;
         let (base, occurrence) = provider::split_occurrence(local);
+        let (base, day) = match base.split_once('@') {
+            Some((b, d)) if NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok() => (b, Some(d.to_string())),
+            Some(_) => return Err(self.fail(ErrorKind::NotFound, format!("{id} isn't a HEY event ID"))),
+            None => (base, None),
+        };
         if base.is_empty() || !base.chars().all(|c| c.is_ascii_digit()) {
             return Err(self.fail(ErrorKind::NotFound, format!("{id} isn't a HEY event ID")));
         }
-        Ok((base.to_string(), occurrence.is_some()))
+        Ok((base.to_string(), occurrence.is_some(), day))
     }
 }
 
@@ -334,17 +350,23 @@ impl Provider for Hey {
         }
         let data = self.run(&args)?;
         let id = id_of(&data["id"]).ok_or_else(|| self.fail(ErrorKind::AccountUnavailable, "`hey event add` didn't say which event it made"))?;
-        Ok(format!("{}:{id}", self.name))
+        let day = match event.start {
+            Time::At(t) => t.date_naive(),
+            Time::Date(d) => d,
+        };
+        Ok(format!("{}:{id}@{}", self.name, day.format("%Y-%m-%d")))
     }
 
     fn update(&self, id: &str, change: &EventChange) -> Result<()> {
-        let (target, occurrence) = self.target(id)?;
+        let (target, occurrence, day) = self.target(id)?;
         if occurrence {
             return Err(Error::bad_request(
                 "HEY: a repeating HEY event can't be changed here yet (the hey CLI finds a series by the day it began, which the week listing doesn't give); change it in HEY",
             ));
         }
         let mut args = Self::args(&["event", "edit", &target]);
+        args.extend(day);
+        let base_len = args.len();
         if let Some(t) = &change.title {
             args.push(format!("--title={t}"));
         }
@@ -362,14 +384,14 @@ impl Provider for Hey {
             check_span(&s, &e)?;
             args.extend(span_args(&s, &e, &crate::icloud::zone()?));
         }
-        if args.len() == 3 {
+        if args.len() == base_len {
             return Ok(());
         }
         self.run(&args).map(|_| ())
     }
 
     fn delete(&self, id: &str) -> Result<()> {
-        let (target, _) = self.target(id)?;
+        let (target, _, _) = self.target(id)?;
         self.run(&Self::args(&["event", "delete", &target])).map(|_| ())
     }
 

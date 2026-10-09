@@ -250,14 +250,21 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     assert_eq!(code, 0, "HEY_NO_KEYRING never reaches hey: {v}");
 
     let (v, code) = home.json(&["event", "add", "--calendar", "hey:11", "--title", "Dinner", "--start", "2026-10-15 19:00", "--end", "2026-10-15 21:00", "--notes", "bring wine"], &[]);
-    assert_eq!((code, v["data"]["id"].as_str()), (0, Some("hey:777")), "{v}");
+    assert_eq!((code, v["data"]["id"].as_str()), (0, Some("hey:777@2026-10-15")), "{v}");
     let (v, code) = home.json(&["event", "add", "--calendar", "hey:11", "--title=-Away", "--start", "2026-10-20", "--end", "2026-10-23"], &[]);
     assert_eq!(code, 0, "{v}");
     let (v, code) = home.json(&["event", "edit", "hey:500~20261013T060000Z", "--title", "Gym!"], &[]);
     assert_eq!(code, 2, "a repeating HEY event is read-only: {v}");
-    let (v, code) = home.json(&["event", "edit", "hey:401", "--start", "2026-10-14 13:00"], &[]);
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--start", "2026-10-14 13:00"], &[]);
     assert_eq!(code, 2, "a HEY move names both ends: {v}");
-    let (v, code) = home.json(&["event", "edit", "hey:401", "--start", "2026-10-14 13:00", "--end", "2026-10-14 14:30", "--location", ""], &[]);
+    // Without the day it starts on, hey can't find an older event: its error and hint come
+    // through (hey writes them to stderr).
+    let (v, code) = home.json(&["event", "edit", "hey:401", "--title", "Lunch!"], &[]);
+    assert_eq!(code, 4, "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("event 401 not found (hey event edit 401 <YYYY-MM-DD>"), "{v}");
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--title", "Lunch!"], &[]);
+    assert_eq!(code, 0, "{v}");
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--start", "2026-10-14 13:00", "--end", "2026-10-14 14:30", "--location", ""], &[]);
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["meta"]["warnings"][0]["code"], "edit_side_effects", "a HEY edit says what it drops: {v}");
     let (v, code) = home.json(&["event", "delete", "hey:500~20261013T060000Z", "--yes"], &[]);
@@ -268,7 +275,9 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
         vec![
             "event\tadd\t--title=Dinner\t--calendar\t11\t--time-zone\tUTC\t--starts-on\t2026-10-15\t--start-time\t19:00\t--ends-on\t2026-10-15\t--end-time\t21:00\t--notes\tbring wine",
             "event\tadd\t--title=-Away\t--calendar\t11\t--all-day\t--starts-on\t2026-10-20\t--ends-on\t2026-10-22",
-            "event\tedit\t401\t--location\t\t--time-zone\tUTC\t--all-day=false\t--starts-on\t2026-10-14\t--start-time\t13:00\t--ends-on\t2026-10-14\t--end-time\t14:30",
+            "event\tedit\t401\t--title=Lunch!",
+            "event\tedit\t401\t2026-10-14\t--title=Lunch!",
+            "event\tedit\t401\t2026-10-14\t--location\t\t--time-zone\tUTC\t--all-day=false\t--starts-on\t2026-10-14\t--start-time\t13:00\t--ends-on\t2026-10-14\t--end-time\t14:30",
             "event\tdelete\t500",
         ]
     );
@@ -294,12 +303,14 @@ fn accounts_merge_into_one_agenda() {
             "icloud:home/standup~20261013T080000Z",
             "google:me@gmail.com/g1",
             "icloud:home/dentist",
-            "hey:401",
-            "hey:402",
+            "hey:401@2026-10-14",
+            "hey:402@2026-10-15",
             "icloud:home/trip",
         ]
     );
-    let trip = v["data"].as_array().unwrap().iter().find(|e| e["id"] == "hey:402").unwrap();
+    let lunch = v["data"].as_array().unwrap().iter().find(|e| e["id"] == "hey:401@2026-10-14").unwrap();
+    assert_eq!(lunch["notes"], "Bring the menu", "a HEY event's notes are its description");
+    let trip = v["data"].as_array().unwrap().iter().find(|e| e["id"] == "hey:402@2026-10-15").unwrap();
     assert_eq!((trip["start"].as_str(), trip["end"].as_str()), (Some("2026-10-15"), Some("2026-10-16")), "ending at midnight, a one-day event");
     assert!(!v.to_string().contains("Should not show"), "calendars hidden in Google aren't read");
 
