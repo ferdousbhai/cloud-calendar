@@ -36,10 +36,7 @@ impl Link {
 }
 
 fn session_error(e: icloud_session::Error) -> Error {
-    match e {
-        icloud_session::Error::Service(m) => crate::icloud::service_error(&m),
-        other => Error::new(ErrorKind::AccountUnavailable, format!("iCloud: {other}")),
-    }
+    crate::icloud::session_error(e, "icloud")
 }
 
 /// Asks icloud-session to sign in, unless it is, and waits until it is (or its window closes).
