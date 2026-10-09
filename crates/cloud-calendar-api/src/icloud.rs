@@ -70,7 +70,7 @@ pub fn zone() -> Result<(String, Tz)> {
         Some(t) => t,
         None => iana_time_zone::get_timezone().map_err(|e| Error::new(ErrorKind::Config, format!("this computer's time zone is unknown ({e})")))?,
     };
-    let tz: Tz = name.parse().map_err(|_| Error::new(ErrorKind::Config, format!("\"{name}\" isn't a time zone iCloud knows (an IANA name such as Europe/London)")))?;
+    let tz: Tz = name.parse().map_err(|_| Error::new(ErrorKind::Config, format!("\"{name}\" isn't a known time zone (an IANA name such as Europe/London)")))?;
     Ok((name, tz))
 }
 

@@ -254,7 +254,7 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     let (v, code) = home.json(&["event", "add", "--calendar", "hey:11", "--title", "Away", "--start", "2026-10-20", "--end", "2026-10-23"], &[]);
     assert_eq!(code, 0, "{v}");
     let (v, code) = home.json(&["event", "edit", "hey:500~20261013T060000Z", "--title", "Gym!"], &[]);
-    assert_eq!(code, 0, "{v}");
+    assert_eq!(code, 2, "a repeating HEY event is read-only: {v}");
     let (v, code) = home.json(&["event", "edit", "hey:401", "--start", "2026-10-14 13:00"], &[]);
     assert_eq!(code, 2, "a HEY move names both ends: {v}");
     let (v, code) = home.json(&["event", "edit", "hey:401", "--start", "2026-10-14 13:00", "--end", "2026-10-14 14:30", "--location", ""], &[]);
@@ -265,10 +265,9 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     assert_eq!(
         writes,
         vec![
-            "event\tadd\tDinner\t--calendar\t11\t--starts-on\t2026-10-15\t--start-time\t19:00\t--ends-on\t2026-10-15\t--end-time\t21:00\t--notes\tbring wine",
+            "event\tadd\tDinner\t--calendar\t11\t--time-zone\tUTC\t--starts-on\t2026-10-15\t--start-time\t19:00\t--ends-on\t2026-10-15\t--end-time\t21:00\t--notes\tbring wine",
             "event\tadd\tAway\t--calendar\t11\t--all-day\t--starts-on\t2026-10-20\t--ends-on\t2026-10-22",
-            "event\tedit\t500\t--title\tGym!",
-            "event\tedit\t401\t--location\t\t--all-day=false\t--starts-on\t2026-10-14\t--start-time\t13:00\t--ends-on\t2026-10-14\t--end-time\t14:30",
+            "event\tedit\t401\t--location\t\t--time-zone\tUTC\t--all-day=false\t--starts-on\t2026-10-14\t--start-time\t13:00\t--ends-on\t2026-10-14\t--end-time\t14:30",
             "event\tdelete\t500",
         ]
     );

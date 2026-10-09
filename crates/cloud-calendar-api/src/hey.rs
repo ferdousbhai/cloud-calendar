@@ -4,7 +4,10 @@
 //!
 //! Commands used: `hey calendar list`, `hey event week <date> --all` (HEY's own expansion of
 //! repeating events, over the calendars switched on in HEY), `hey event add`, `hey event edit` and
-//! `hey event delete`. Times are written in this machine's time zone, as the CLI does by default.
+//! `hey event delete`. Clock times are written in this machine's IANA time zone and named with
+//! `--time-zone`: hey 1.7 otherwise sends an empty zone when `TZ` is unset (usual on Arch), which
+//! HEY reads as UTC. A repeating event can't be changed here: `hey event edit <series>` finds a
+//! series by the day it began (or within a year of today), which a week listing doesn't give.
 //! JSON shapes: hey-sdk's `generated.Recording` and `generated.Calendar` (basecamp/hey-sdk Go
 //! client), which `hey … --json` prints.
 //!
@@ -83,8 +86,8 @@ pub fn series_of(row: &Value) -> Option<String> {
     (!series.is_empty()).then(|| series.to_string())
 }
 
-/// `hey event add`/`edit` flags for a span, in local time.
-fn span_args(start: &Time, end: &Time) -> Vec<String> {
+/// `hey event add`/`edit` flags for a span, a timed one in `zone` (an IANA name) and named so.
+fn span_args(start: &Time, end: &Time, zone: &(String, chrono_tz::Tz)) -> Vec<String> {
     let day = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
     match (start, end) {
         (Time::Date(s), Time::Date(e)) => {
@@ -92,8 +95,10 @@ fn span_args(start: &Time, end: &Time) -> Vec<String> {
             vec!["--all-day".into(), "--starts-on".into(), day(*s), "--ends-on".into(), day(last)]
         }
         _ => {
-            let (s, e) = (start.instant().with_timezone(&Local), end.instant().with_timezone(&Local));
+            let (s, e) = (start.instant().with_timezone(&zone.1), end.instant().with_timezone(&zone.1));
             vec![
+                "--time-zone".into(),
+                zone.0.clone(),
                 "--all-day=false".into(),
                 "--starts-on".into(),
                 day(s.date_naive()),
@@ -275,7 +280,8 @@ impl Provider for Hey {
                     account: self.name.clone(),
                     name: nonempty(text(&c["name"])).unwrap_or(id),
                     color: nonempty(text(&c["color"])),
-                    writable: c["external"] != json!(true),
+                    // HEY refuses events filed to the personal calendar, and to subscriptions.
+                    writable: c["owned"] == json!(true) && c["personal"] != json!(true) && c["external"] != json!(true),
                 })
             })
             .collect())
@@ -318,7 +324,7 @@ impl Provider for Hey {
         check_span(&event.start, &event.end)?;
         let cal = provider::local_id(&self.name, "HEY", &event.calendar_id)?;
         let mut args = Self::args(&["event", "add", &event.title, "--calendar", cal]);
-        args.extend(span_args(&event.start, &event.end).into_iter().filter(|a| a != "--all-day=false"));
+        args.extend(span_args(&event.start, &event.end, &crate::icloud::zone()?).into_iter().filter(|a| a != "--all-day=false"));
         if let Some(l) = event.location.as_deref().filter(|l| !l.trim().is_empty()) {
             args.extend(["--location".into(), l.to_string()]);
         }
@@ -333,7 +339,9 @@ impl Provider for Hey {
     fn update(&self, id: &str, change: &EventChange) -> Result<()> {
         let (target, occurrence) = self.target(id)?;
         if occurrence {
-            provider::refuse_series_move("HEY", change)?;
+            return Err(Error::bad_request(
+                "HEY: a repeating HEY event can't be changed here yet (the hey CLI finds a series by the day it began, which the week listing doesn't give); change it in HEY",
+            ));
         }
         let mut args = Self::args(&["event", "edit", &target]);
         if let Some(t) = &change.title {
@@ -351,7 +359,7 @@ impl Provider for Hey {
                 return Err(Error::bad_request("HEY: give both the new start and the new end to move a HEY event"));
             };
             check_span(&s, &e)?;
-            args.extend(span_args(&s, &e));
+            args.extend(span_args(&s, &e, &crate::icloud::zone()?));
         }
         if args.len() == 3 {
             return Ok(());
