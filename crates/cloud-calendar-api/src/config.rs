@@ -4,9 +4,9 @@
 //! notify_minutes = [10]
 //!
 //! [accounts.icloud]
-//! username = "you@icloud.com"   # the password is in the keyring, never here
 //!
 //! [accounts.google]
+//! client_id = "….apps.googleusercontent.com"
 //!
 //! [accounts.hey]
 //! ```
@@ -20,29 +20,20 @@ use crate::error::{Error, ErrorKind, Result};
 /// Minutes before a timed event its notification goes out, unless the config says otherwise.
 pub const DEFAULT_NOTIFY_MINUTES: &[u32] = &[10];
 
-/// One account, `[accounts.<name>]`. The name prefixes its IDs (`icloud:…`).
+/// One account, `[accounts.<name>]`. The name prefixes its IDs (`icloud:…`). Nothing secret is
+/// kept here: iCloud's sign-in is icloud-session's, HEY's is hey's, and a Google OAuth client's
+/// secret is in the keyring.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct AccountConfig {
     /// Which provider serves it ("icloud", "google" or "hey"); defaults to the account's name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
-    /// The provider's command-line tool (`gws`, `hey`), when it isn't on PATH under that name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
     /// HEY: the CLI's linked-account selector; default all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
-    /// iCloud: the Apple Account email the app-specific password belongs to.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub username: Option<String>,
-    /// iCloud: the CalDAV server (default https://caldav.icloud.com).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    /// Google: the OAuth client to sign in with.
+    /// Google: the OAuth client ID to sign in with (its secret is in the keyring).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_secret: Option<String>,
 }
 
 impl AccountConfig {

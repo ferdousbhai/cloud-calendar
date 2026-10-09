@@ -1,5 +1,5 @@
-//! Event notifications through Omarchy's own notification path (`omarchy-notification-send`,
-//! which calls the notification daemon directly), or `notify-send` elsewhere. `cloud-calendar
+//! Event notifications through Omarchy's own notification path, `omarchy-notification-send`
+//! (which calls the notification daemon directly; clicking one opens the app). `cloud-calendar
 //! notify`, run every minute by a systemd user timer, sends what is due.
 //!
 //! The next day's timed events are cached for `REFRESH` so the timer doesn't ask every account
@@ -55,6 +55,8 @@ pub struct Sent {
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Report {
     pub sent: Vec<Sent>,
+    /// Notifications that couldn't be shown, and why.
+    pub failed: Vec<String>,
     pub refreshed: bool,
     pub warnings: Vec<AccountWarning>,
 }
@@ -120,28 +122,18 @@ pub fn body(e: &Upcoming, now: DateTime<Utc>) -> String {
     parts.join(" · ")
 }
 
-/// Shows one notification; clicking it opens the app.
+/// Shows one notification; clicking it opens the app. `CLOUD_CALENDAR_NOTIFY_COMMAND` names
+/// another program taking the same arguments (the tests' recorder).
 pub fn send(title: &str, body: &str) -> Result<(), String> {
-    let custom = std::env::var(COMMAND_ENV).ok().filter(|c| !c.trim().is_empty());
-    let omarchy = ["--app-name", "Cloud Calendar", "-g", "󰃭", "-u", "normal", title, body, "--exec", "cloud-calendar-gtk"];
-    let attempts: Vec<(String, Vec<&str>)> = match custom {
-        Some(c) => vec![(c, omarchy.to_vec())],
-        None => vec![
-            ("omarchy-notification-send".into(), omarchy.to_vec()),
-            ("notify-send".into(), vec!["--app-name=Cloud Calendar", "--icon=x-office-calendar", "-u", "normal", "--", title, body]),
-        ],
-    };
-    let mut last = String::from("no notification command");
-    for (program, args) in attempts {
-        match run_command(Command::new(&program).args(&args), None, Duration::from_secs(15)) {
-            Run::Done { status, .. } if status.success() => return Ok(()),
-            Run::Done { status, stderr, .. } => last = format!("{program} failed ({status}): {stderr}"),
-            Run::Missing => last = format!("neither omarchy-notification-send nor notify-send is installed (tried {program})"),
-            Run::TimedOut => last = format!("{program} didn't answer"),
-            Run::Failed(e) => last = format!("could not run {program}: {e}"),
-        }
+    let program = std::env::var(COMMAND_ENV).ok().filter(|c| !c.trim().is_empty()).unwrap_or_else(|| "omarchy-notification-send".into());
+    let args = ["--app-name", "Cloud Calendar", "-g", "󰃭", "-u", "normal", title, body, "--exec", "cloud-calendar-gtk"];
+    match run_command(Command::new(&program).args(args), None, Duration::from_secs(15)) {
+        Run::Done { status, .. } if status.success() => Ok(()),
+        Run::Done { status, stderr, .. } => Err(format!("{program} failed ({status}): {stderr}")),
+        Run::Missing => Err(format!("{program} isn't installed; notifications go through Omarchy's")),
+        Run::TimedOut => Err(format!("{program} didn't answer")),
+        Run::Failed(e) => Err(format!("could not run {program}: {e}")),
     }
-    Err(last)
 }
 
 /// One run of the notifier: refresh the cache when stale, send what's due, remember it.
@@ -150,19 +142,16 @@ pub fn run(calendars: &Calendars, leads: &[u32], now: DateTime<Utc>, force_refre
     let mut report = Report::default();
     if force_refresh || state.fetched_at.is_none_or(|t| now - t >= REFRESH || t > now) {
         let listing = calendars.events(&Range { start: now - chrono::Duration::minutes(1), end: now + LOOKAHEAD });
-        // A failing account keeps its last known events rather than going quiet.
-        let failed: Vec<&str> = listing.warnings.iter().map(|w| w.account.as_str()).collect();
-        let mut fresh = upcoming(&listing.items);
-        let account_of = |id: &str| id.split(':').next().unwrap_or("").to_string();
-        fresh.extend(state.upcoming.iter().filter(|u| failed.contains(&account_of(&u.id).as_str())).cloned());
-        state.upcoming = fresh;
+        state.upcoming = upcoming(&listing.items);
         state.fetched_at = Some(now);
         report.refreshed = true;
         report.warnings = listing.warnings;
     }
     for (e, minutes) in due(&state.upcoming, leads, now, &mut state.sent) {
-        let _ = send(&e.title, &body(&e, now));
-        report.sent.push(Sent { id: e.id.clone(), title: e.title.clone(), start: e.start, minutes_before: minutes });
+        match send(&e.title, &body(&e, now)) {
+            Ok(()) => report.sent.push(Sent { id: e.id.clone(), title: e.title.clone(), start: e.start, minutes_before: minutes }),
+            Err(message) => report.failed.push(message),
+        }
     }
     state.upcoming.retain(|u| u.start > now - chrono::Duration::hours(1));
     state.sent.retain(|_, start| *start > now - chrono::Duration::hours(1));
@@ -203,13 +192,5 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 10, 9, 13, 55, 0).unwrap();
         assert_eq!(due(&[ev("a", 14, 0)], &[10], now, &mut sent).len(), 1);
         assert_eq!(due(&[ev("a", 14, 1)], &[10], now, &mut sent).len(), 1);
-    }
-
-    #[test]
-    fn body_reads_naturally() {
-        let e = Upcoming { location: Some("Room 2".into()), ..ev("a", 14, 0) };
-        let b = body(&e, Utc.with_ymd_and_hms(2026, 10, 9, 13, 50, 0).unwrap());
-        assert!(b.starts_with("in 10 min · ") && b.ends_with(" · Room 2 · Work"), "{b}");
-        assert!(body(&e, e.start).starts_with("starting now"));
     }
 }

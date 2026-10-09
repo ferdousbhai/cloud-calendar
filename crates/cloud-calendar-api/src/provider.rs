@@ -1,4 +1,5 @@
-//! Calendar providers: iCloud (CalDAV), Google Calendar (Google's `gws` CLI) and HEY Calendar
+//! Calendar providers: iCloud (icloud.com's calendar service, signed in through icloud-session),
+//! Google Calendar (Google's `gws` CLI) and HEY Calendar
 //! (the official `hey` CLI). Each speaks in cloud-calendar's own types and prefixes every ID it
 //! hands out with its account's name (`icloud:…`), so any later action on that ID goes back to it.
 //!
@@ -67,7 +68,7 @@ pub trait Provider: Send + Sync {
 
 /// Providers cloud-calendar knows how to link, for `account add` and its help.
 pub const KNOWN_PROVIDERS: &[(&str, &str)] = &[
-    ("icloud", "iCloud Calendar, over CalDAV with an app-specific password"),
+    ("icloud", "iCloud Calendar, through the iCloud sign-in icloud-session shares with your other apps"),
     ("google", "Google Calendar, through Google's Workspace CLI `gws`"),
     ("hey", "HEY Calendar, through the official `hey` CLI"),
 ];
@@ -75,7 +76,7 @@ pub const KNOWN_PROVIDERS: &[(&str, &str)] = &[
 /// Opens a configured account.
 pub fn open(name: &str, cfg: &AccountConfig) -> Result<Arc<dyn Provider>> {
     match cfg.provider(name) {
-        "icloud" => Ok(Arc::new(crate::caldav::ICloud::new(name, cfg))),
+        "icloud" => Ok(Arc::new(crate::icloud::ICloud::new(name, cfg))),
         "google" => Ok(Arc::new(crate::google::Google::new(name, cfg))),
         "hey" => Ok(Arc::new(crate::hey::Hey::new(name, cfg))),
         other => Err(Error::new(
@@ -187,23 +188,6 @@ pub(crate) fn run_command(cmd: &mut Command, stdin: Option<&str>, timeout: Durat
     let stdout = out.join().unwrap_or_default();
     let stderr = String::from_utf8_lossy(&err.join().unwrap_or_default()).trim().to_string();
     Run::Done { status, stdout, stderr }
-}
-
-/// Runs an interactive sign-in command attached to the terminal, for up to ten minutes.
-pub(crate) fn run_attached(cmd: &mut Command) -> std::io::Result<Option<ExitStatus>> {
-    let mut child = cmd.stdin(Stdio::null()).spawn()?;
-    let deadline = Instant::now() + Duration::from_secs(600);
-    loop {
-        match child.try_wait()? {
-            Some(s) => return Ok(Some(s)),
-            None if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
-            None => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Ok(None);
-            }
-        }
-    }
 }
 
 #[cfg(test)]

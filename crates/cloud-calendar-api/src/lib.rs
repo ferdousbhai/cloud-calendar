@@ -1,15 +1,16 @@
-//! Calendar providers (iCloud over CalDAV, Google through `gws`, HEY through `hey`), the merged
-//! view across them, config and notifications, shared by the cloud-calendar CLI and GTK app.
+//! Calendar providers (iCloud through icloud-session, Google through `gws`, HEY through `hey`),
+//! the merged view across them, accounts, config and notifications, shared by the cloud-calendar
+//! CLI and GTK app.
 
-pub mod caldav;
+pub mod accounts;
 pub mod config;
 pub mod error;
 pub mod google;
 pub mod hey;
-pub mod ics;
+pub mod icloud;
+pub mod keyring;
 pub mod notify;
 pub mod provider;
-pub mod secret;
 pub mod time;
 pub mod types;
 pub mod unified;

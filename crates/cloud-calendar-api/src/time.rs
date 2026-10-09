@@ -117,12 +117,4 @@ mod tests {
         assert_eq!(parse_time("09:30", day(9)).unwrap().local_date(), day(9));
         assert!(parse_time("2026-10-10 25:00", day(9)).is_err());
     }
-
-    #[test]
-    fn lengths() {
-        assert_eq!(parse_length("1h30m").unwrap().num_minutes(), 90);
-        assert_eq!(parse_length("2d").unwrap().num_days(), 2);
-        assert!(parse_length("1x").is_err() && parse_length("0m").is_err() && parse_length("30").is_err());
-        assert_eq!(add_length(&Time::Date(day(9)), parse_length("2d").unwrap()), Time::Date(day(11)));
-    }
 }

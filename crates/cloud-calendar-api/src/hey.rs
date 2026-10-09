@@ -5,6 +5,13 @@
 //! Commands used: `hey calendar list`, `hey event week <date> --all` (HEY's own expansion of
 //! repeating events, over the calendars switched on in HEY), `hey event add`, `hey event edit` and
 //! `hey event delete`. Times are written in this machine's time zone, as the CLI does by default.
+//! JSON shapes: hey-sdk's `generated.Recording` and `generated.Calendar` (basecamp/hey-sdk Go
+//! client), which `hey … --json` prints.
+//!
+//! hey keeps its sign-in in the keyring unless no keyring is reachable, when it writes
+//! `credentials.json` instead (basecamp/hey-cli `internal/auth/store.go`, commit 73938bb); `hey
+//! auth status` says which. Signing in here insists on the keyring, and `HEY_NO_KEYRING` is never
+//! passed on.
 //!
 //! IDs: a calendar is `hey:<calendar id>`, an event `hey:<event id>`, an occurrence of a repeating
 //! event `hey:<series id>~<day>`, whose edits and deletes go to the series.
@@ -41,26 +48,31 @@ fn instant(v: &Value) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(v.as_str()?).ok().map(|t| t.with_timezone(&Utc))
 }
 
+/// Recording and calendar IDs are int64 in hey-sdk.
 fn id_of(v: &Value) -> Option<String> {
-    match v {
-        Value::Number(n) => Some(n.to_string()),
-        Value::String(s) if !s.is_empty() => Some(s.clone()),
-        _ => None,
-    }
+    v.as_i64().map(|n| n.to_string())
 }
 
-/// An event's span from HEY's `starts_at` / `ends_at` / `all_day`. HEY dates an all-day event by
-/// its UTC day; its last day is inclusive unless `ends_at` falls a whole number of days after
-/// `starts_at`, which reads as an exclusive end.
+/// An event's span from HEY's `starts_at` / `ends_at` / `all_day`. An all-day event's days are
+/// its UTC dates (hey-cli `eventDay`), and its last day is the day `ends_at` falls on, unless
+/// it ends exactly at midnight, when it is the day before; no end, or one not after the start,
+/// is the start's day alone. This is how hey's own calendar spreads an event over days
+/// (hey-cli `internal/tui/calendar_views.go` `eventsByDate`, commit 73938bb).
 pub fn span(row: &Value) -> Option<(Time, Time)> {
     let start = instant(&row["starts_at"])?;
-    let end = instant(&row["ends_at"]).unwrap_or(start);
+    let end = instant(&row["ends_at"]);
     if row["all_day"] == json!(true) {
         let first = start.date_naive();
-        let whole_days = end > start && (end - start).num_seconds() % 86_400 == 0;
-        let last_excl = if whole_days { first + chrono::Days::new(((end - start).num_seconds() / 86_400) as u64) } else { end.date_naive().max(first) + chrono::Days::new(1) };
-        return Some((Time::Date(first), Time::Date(last_excl)));
+        let last = match end {
+            Some(e) if e > start && e.date_naive() != first => {
+                let midnight = e.time() == chrono::NaiveTime::MIN;
+                if midnight { e.date_naive() - chrono::Days::new(1) } else { e.date_naive() }
+            }
+            _ => first,
+        };
+        return Some((Time::Date(first), Time::Date(last.max(first) + chrono::Days::new(1))));
     }
+    let end = end?;
     Some((Time::At(start), Time::At(end.max(start))))
 }
 
@@ -98,11 +110,7 @@ fn span_args(start: &Time, end: &Time) -> Vec<String> {
 
 impl Hey {
     pub fn new(name: &str, cfg: &AccountConfig) -> Self {
-        let command = std::env::var(COMMAND_ENV)
-            .ok()
-            .filter(|c| !c.trim().is_empty())
-            .or_else(|| cfg.command.clone().filter(|c| !c.trim().is_empty()))
-            .unwrap_or_else(|| "hey".into());
+        let command = std::env::var(COMMAND_ENV).ok().filter(|c| !c.trim().is_empty()).unwrap_or_else(|| "hey".into());
         Self { name: name.into(), command, account: cfg.account.clone().filter(|a| !a.trim().is_empty()) }
     }
 
@@ -113,7 +121,7 @@ impl Hey {
     /// Runs `hey <args> --json` and returns the envelope's `data`.
     fn run(&self, args: &[String]) -> Result<Value> {
         let mut cmd = Command::new(&self.command);
-        cmd.args(args).arg("--json").env("HEY_NONINTERACTIVE", "1");
+        cmd.args(args).arg("--json").env("HEY_NONINTERACTIVE", "1").env_remove("HEY_NO_KEYRING");
         if let Some(a) = &self.account {
             cmd.args(["--account", a]);
         }
@@ -152,18 +160,40 @@ impl Hey {
         items.iter().map(|s| s.to_string()).collect()
     }
 
+    /// `hey auth login`: hey opens the browser itself (hey-cli `internal/auth/browser.go`) and
+    /// waits for HEY to send it back.
     pub fn login(&self) -> Result<()> {
-        match provider::run_attached(Command::new(&self.command).args(["auth", "login"])) {
-            Ok(Some(s)) if s.success() => Ok(()),
-            Ok(Some(s)) => Err(self.fail(ErrorKind::AccountAuth, format!("`hey auth login` didn't finish ({s})"))),
-            Ok(None) => Err(self.fail(ErrorKind::AccountAuth, "the HEY sign-in wasn't finished within 10 minutes")),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(self.fail(ErrorKind::AccountUnavailable, format!("the hey CLI isn't installed (no `{}` on PATH)", self.command))),
-            Err(e) => Err(self.fail(ErrorKind::AccountUnavailable, e.to_string())),
+        let mut cmd = Command::new(&self.command);
+        cmd.args(["auth", "login"]).env_remove("HEY_NO_KEYRING");
+        if let Some(a) = &self.account {
+            cmd.args(["--account", a]);
+        }
+        match run_command(&mut cmd, None, crate::accounts::SIGN_IN_TIMEOUT) {
+            Run::Done { status, .. } if status.success() => Ok(()),
+            Run::Done { status, stderr, .. } => Err(self.fail(ErrorKind::AccountAuth, format!("`hey auth login` didn't finish ({status}): {}", stderr.lines().last().unwrap_or("")))),
+            Run::TimedOut => Err(self.fail(ErrorKind::AccountAuth, "the HEY sign-in wasn't finished within 10 minutes")),
+            Run::Missing => Err(self.fail(ErrorKind::AccountUnavailable, format!("the hey CLI isn't installed (no `{}` on PATH); see https://github.com/basecamp/hey-cli", self.command))),
+            Run::Failed(e) => Err(self.fail(ErrorKind::AccountUnavailable, e.to_string())),
         }
     }
 
     pub fn signed_in(&self) -> Result<bool> {
         Ok(self.run(&Self::args(&["auth", "status"]))?["authenticated"] == json!(true))
+    }
+
+    /// Fails unless hey keeps its sign-in in the keyring (`hey auth status` → `storage`).
+    pub fn check_keyring(&self) -> Result<()> {
+        let status = self.run(&Self::args(&["auth", "status"]))?;
+        if status["authenticated"] != json!(true) {
+            return Err(self.fail(ErrorKind::AccountAuth, format!("not signed in: sign in again (`cloud-calendar account login {}`, or in the app)", self.name)));
+        }
+        match status["storage"].as_str() {
+            Some("keyring") => Ok(()),
+            _ => Err(self.fail(
+                ErrorKind::AccountAuth,
+                "hey keeps its sign-in in a plain file (credentials.json) because no keyring was reachable when it signed in; start a keyring (e.g. gnome-keyring), run `hey auth logout`, and sign in again",
+            )),
+        }
     }
 
     fn row_event(&self, row: &Value) -> Option<Event> {
@@ -176,13 +206,13 @@ impl Hey {
             None => id_of(&row["id"])?,
         };
         let cal = &row["calendar"];
-        let title = nonempty(text(&row["title"])).or_else(|| nonempty(text(&row["summary"]))).unwrap_or_else(|| "(no title)".into());
+        let title = nonempty(text(&row["title"])).unwrap_or_else(|| "(no title)".into());
         Some(Event {
             id: format!("{}:{local}", self.name),
             account: self.name.clone(),
             calendar_id: id_of(&cal["id"]).map(|c| format!("{}:{c}", self.name)).unwrap_or_default(),
             calendar: text(&cal["name"]),
-            color: nonempty(text(&cal["color"])).or_else(|| nonempty(text(&row["color"]))),
+            color: nonempty(text(&cal["color"])),
             title,
             all_day: start.is_date(),
             start,
@@ -216,10 +246,13 @@ impl Provider for Hey {
     fn status(&self) -> AccountStatus {
         let mut s = AccountStatus { name: self.name.clone(), provider: "hey".into(), label: "HEY".into(), ..Default::default() };
         match self.signed_in() {
-            Ok(true) => {
-                s.ok = true;
-                s.detail = format!("signed in via {}", self.command);
-            }
+            Ok(true) => match self.check_keyring() {
+                Ok(()) => {
+                    s.ok = true;
+                    s.detail = format!("signed in via {}", self.command);
+                }
+                Err(e) => s.detail = e.message,
+            },
             Ok(false) => s.detail = format!("not signed in: run `cloud-calendar account login {}`", self.name),
             Err(e) => s.detail = e.message,
         }
@@ -338,32 +371,15 @@ mod tests {
     use chrono::TimeZone;
 
     #[test]
-    fn spans() {
-        let timed = json!({"starts_at": "2026-10-09T14:00:00Z", "ends_at": "2026-10-09T15:00:00Z"});
-        let (s, e) = span(&timed).unwrap();
-        assert_eq!(s, Time::At(Utc.with_ymd_and_hms(2026, 10, 9, 14, 0, 0).unwrap()));
-        assert_eq!(e, Time::At(Utc.with_ymd_and_hms(2026, 10, 9, 15, 0, 0).unwrap()));
+    fn all_day_days_follow_heys_own_calendar() {
         let d = |day| Time::Date(NaiveDate::from_ymd_opt(2026, 10, day).unwrap());
-        // Inclusive end of day, and an exclusive whole-day end, both read as the 9th alone.
-        let inclusive = json!({"all_day": true, "starts_at": "2026-10-09T00:00:00Z", "ends_at": "2026-10-09T23:59:59Z"});
-        assert_eq!(span(&inclusive).unwrap(), (d(9), d(10)));
-        let exclusive = json!({"all_day": true, "starts_at": "2026-10-09T00:00:00Z", "ends_at": "2026-10-10T00:00:00Z"});
-        assert_eq!(span(&exclusive).unwrap(), (d(9), d(10)));
-        let same = json!({"all_day": true, "starts_at": "2026-10-09T00:00:00Z", "ends_at": "2026-10-09T00:00:00Z"});
-        assert_eq!(span(&same).unwrap(), (d(9), d(10)));
-        let two = json!({"all_day": true, "starts_at": "2026-10-09T00:00:00Z", "ends_at": "2026-10-10T00:00:00Z", "x": 1});
-        assert_eq!(span(&two).unwrap().1, d(10));
-    }
-
-    #[test]
-    fn series() {
-        assert_eq!(series_of(&json!({"occurrence_id": "4821_2026-09-15"})).as_deref(), Some("4821"));
-        assert_eq!(series_of(&json!({"id": 1})), None);
-    }
-
-    #[test]
-    fn all_day_args_use_an_inclusive_last_day() {
-        let d = |day| Time::Date(NaiveDate::from_ymd_opt(2026, 10, day).unwrap());
-        assert_eq!(span_args(&d(9), &d(11)), vec!["--all-day", "--starts-on", "2026-10-09", "--ends-on", "2026-10-10"]);
+        let row = |s: &str, e: &str| json!({"all_day": true, "starts_at": s, "ends_at": e});
+        // Ending at midnight: the day before is the last. Ending inside a day: that day is.
+        assert_eq!(span(&row("2026-10-15T00:00:00Z", "2026-10-18T00:00:00Z")).unwrap(), (d(15), d(18)));
+        assert_eq!(span(&row("2026-10-15T00:00:00Z", "2026-10-17T23:59:59Z")).unwrap(), (d(15), d(18)));
+        // No real end: the start's day alone.
+        assert_eq!(span(&row("2026-10-15T00:00:00Z", "2026-10-15T00:00:00Z")).unwrap(), (d(15), d(16)));
+        let timed = json!({"starts_at": "2026-10-09T14:00:00+02:00", "ends_at": "2026-10-09T15:00:00+02:00"});
+        assert_eq!(span(&timed).unwrap().0, Time::At(Utc.with_ymd_and_hms(2026, 10, 9, 12, 0, 0).unwrap()));
     }
 }

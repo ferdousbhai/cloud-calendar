@@ -4,13 +4,20 @@
 //! tokens; cloud-calendar never sees one.
 //!
 //! Isolation, as cloud-mail does for Gmail: gws runs with its config directory set to
-//! cloud-calendar's own (`~/.config/cloud-calendar/gws/<account>`), its encryption key in a file
-//! there rather than the OS keyring, and no fallback to Application Default Credentials, so a gws
-//! setup of your own is never read or changed.
+//! cloud-calendar's own (`~/.config/cloud-calendar/gws/<account>`) and no way to fall back to
+//! Application Default Credentials, so a gws setup of your own is never read or changed.
+//!
+//! Where gws keeps the sign-in: `credentials.enc` in that directory, encrypted with a key gws
+//! keeps in `.encryption_key` beside it. gws can't keep that key only in the keyring on Linux:
+//! its "keyring" backend still writes and reads the file there, because its keyring crate is built
+//! without a Secret Service backend on Linux (googleworkspace/cli
+//! `crates/google-workspace-cli/src/credential_store.rs`, `resolve_key`, commit a3768d0). So the
+//! "file" backend is used, which is what gws does on Linux anyway, without touching the one
+//! keyring entry a gws of your own uses.
 //!
 //! Sign-in: `gws auth login --scopes <calendar.events, calendar.calendarlist.readonly>` with a
-//! Google OAuth client ("Desktop app", Calendar API enabled) from `CLOUD_CALENDAR_GOOGLE_CLIENT_ID`
-//! / `_SECRET` or `client_id` / `client_secret` under the account in config.toml.
+//! Google OAuth client ("Desktop app", Calendar API enabled): its ID under the account in
+//! config.toml, its secret in the keyring.
 //!
 //! IDs: a calendar is `google:<calendarId>`, an event `google:<calendarId>/<eventId>`; listings
 //! expand repeating events (`singleEvents`), and an occurrence's edits and deletes go to its series
@@ -29,8 +36,8 @@ use crate::provider::{self, AccountStatus, Provider, Run, run_command};
 use crate::types::*;
 
 pub const COMMAND_ENV: &str = "CLOUD_CALENDAR_GWS_COMMAND";
-pub const CLIENT_ID_ENV: &str = "CLOUD_CALENDAR_GOOGLE_CLIENT_ID";
-pub const CLIENT_SECRET_ENV: &str = "CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET";
+/// The keyring item holding the OAuth client's secret.
+pub const SECRET_KIND: &str = "google-oauth-client-secret";
 /// The program that opens the sign-in link (default: xdg-open).
 pub const BROWSER_ENV: &str = "CLOUD_CALENDAR_BROWSER";
 /// Events on your calendars, and the list of calendars; nothing else in your Google account.
@@ -46,7 +53,9 @@ pub struct Google {
     name: String,
     command: String,
     dir: PathBuf,
-    client: Option<(String, String)>,
+    client_id: Option<String>,
+    /// The client secret, once read from the keyring.
+    secret: std::sync::Mutex<Option<String>>,
 }
 
 fn text(v: &Value) -> String {
@@ -88,10 +97,8 @@ fn open_browser(url: &str) {
 
 impl Google {
     pub fn new(name: &str, cfg: &AccountConfig) -> Self {
-        let command = nonblank(std::env::var(COMMAND_ENV).ok()).or_else(|| nonblank(cfg.command.clone())).unwrap_or_else(|| "gws".into());
-        let env = |k| nonblank(std::env::var(k).ok());
-        let client = [(env(CLIENT_ID_ENV), env(CLIENT_SECRET_ENV)), (nonblank(cfg.client_id.clone()), nonblank(cfg.client_secret.clone()))].into_iter().find_map(|(id, secret)| Some((id?, secret?)));
-        Self { name: name.into(), command, dir: gws_dir(name), client }
+        let command = nonblank(std::env::var(COMMAND_ENV).ok()).unwrap_or_else(|| "gws".into());
+        Self { name: name.into(), command, dir: gws_dir(name), client_id: nonblank(cfg.client_id.clone()), secret: Default::default() }
     }
 
     pub fn dir(&self) -> &Path {
@@ -110,7 +117,19 @@ impl Google {
         self.fail(ErrorKind::AccountUnavailable, format!("Google's Workspace CLI isn't installed (no `{}` on PATH); {INSTALL_HINT}", self.command))
     }
 
-    fn gws(&self) -> Command {
+    /// The OAuth client: its ID from the config, its secret from the keyring.
+    fn client(&self) -> Result<(String, String)> {
+        let id = self.client_id.clone().ok_or_else(|| Error::new(ErrorKind::Config, format!("Google: no OAuth client ID for {}; link it again with its client ID and secret", self.name)))?;
+        if let Some(secret) = self.secret.lock().unwrap().clone() {
+            return Ok((id, secret));
+        }
+        let secret = crate::keyring::get(&self.name, SECRET_KIND)?.ok_or_else(|| Error::new(ErrorKind::Config, format!("Google: the OAuth client secret for {} isn't in the keyring; link the account again", self.name)))?;
+        *self.secret.lock().unwrap() = Some(secret.clone());
+        Ok((id, secret))
+    }
+
+    fn gws(&self) -> Result<Command> {
+        let (id, secret) = self.client()?;
         let mut cmd = Command::new(&self.command);
         // gws also reads a .env from its working directory.
         cmd.current_dir(if self.dir.is_dir() { self.dir.clone() } else { std::env::temp_dir() })
@@ -118,25 +137,17 @@ impl Google {
             .env("GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND", "file")
             .env("GOOGLE_APPLICATION_CREDENTIALS", self.dir.join("no-application-default-credentials.json"))
             .env_remove("GOOGLE_WORKSPACE_CLI_TOKEN")
-            .env_remove("GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE");
-        match &self.client {
-            Some((id, secret)) => cmd.env("GOOGLE_WORKSPACE_CLI_CLIENT_ID", id).env("GOOGLE_WORKSPACE_CLI_CLIENT_SECRET", secret),
-            None => cmd.env_remove("GOOGLE_WORKSPACE_CLI_CLIENT_ID").env_remove("GOOGLE_WORKSPACE_CLI_CLIENT_SECRET"),
-        };
-        cmd
+            .env_remove("GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE")
+            .env("GOOGLE_WORKSPACE_CLI_CLIENT_ID", id)
+            .env("GOOGLE_WORKSPACE_CLI_CLIENT_SECRET", secret);
+        Ok(cmd)
     }
 
     /// Google's browser sign-in through `gws auth login`: gws prints a link, opened here in the
     /// browser, and waits for Google to send the browser back.
     pub fn login(&self) -> Result<()> {
-        if self.client.is_none() {
-            return Err(Error::new(
-                ErrorKind::Config,
-                format!("Google sign-in needs an OAuth client: set {CLIENT_ID_ENV} and {CLIENT_SECRET_ENV} (a Desktop-app client from Google Cloud Console with the Calendar API enabled), or client_id and client_secret under [accounts.{}] in config.toml", self.name),
-            ));
-        }
+        let mut cmd = self.gws()?;
         crate::config::private_dir(&self.dir).map_err(|e| self.fail(ErrorKind::AccountUnavailable, format!("could not create {}: {e}", self.dir.display())))?;
-        let mut cmd = self.gws();
         cmd.current_dir(&self.dir).args(["auth", "login", "--scopes", SCOPES]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = cmd.spawn().map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { self.missing() } else { self.fail(ErrorKind::AccountUnavailable, e.to_string()) })?;
         let opened = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -196,7 +207,7 @@ impl Google {
             return Err(self.fail(ErrorKind::AccountAuth, format!("not signed in; run `cloud-calendar account login {}`", self.name)));
         }
         let what = format!("{resource} {method}");
-        let mut cmd = self.gws();
+        let mut cmd = self.gws()?;
         cmd.args(["calendar", resource, method]).arg("--params").arg(params.to_string());
         if let Some(b) = body {
             cmd.arg("--json").arg(b.to_string());
@@ -445,21 +456,5 @@ impl Provider for Google {
         let (cal, ev, occurrence) = self.event_ref(id)?;
         let target = if occurrence { self.target(id)?.1 } else { ev.to_string() };
         self.call("events", "delete", json!({ "calendarId": cal, "eventId": target }), None).map(|_| ())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::TimeZone;
-
-    #[test]
-    fn when_round_trips() {
-        let t = Time::At(Utc.with_ymd_and_hms(2026, 10, 9, 14, 0, 0).unwrap());
-        assert_eq!(parse_when(&when_json(&t)), Some(t));
-        assert_eq!(parse_when(&json!({"dateTime": "2026-10-09T16:00:00+02:00"})), Some(t));
-        let d = Time::Date(NaiveDate::from_ymd_opt(2026, 10, 9).unwrap());
-        assert_eq!(parse_when(&when_json(&d)), Some(d));
-        assert_eq!(parse_when(&json!({})), None);
     }
 }

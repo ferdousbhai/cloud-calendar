@@ -16,9 +16,10 @@ dirs = "7.0.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
 toml = "1.1.6"
-ureq = "3"
-base64 = "0.23.1"
-roxmltree = "0.21"
+# The client every iCloud app on this machine shares: icloud-sessiond's one web sign-in.
+icloud-session = { git = "https://github.com/ferdousbhai/icloud-for-omarchy", rev = "78523242b9e4a613680fee75c4bb052049f728b0" }
+iana-time-zone = "0.1"
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 
 [profile.release]
 lto = "thin"
