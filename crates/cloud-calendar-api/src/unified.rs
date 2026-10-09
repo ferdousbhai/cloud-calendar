@@ -103,7 +103,8 @@ impl Calendars {
         self.account_for(&event.calendar_id)?.create(event)
     }
 
-    pub fn update(&self, id: &str, change: &EventChange) -> Result<()> {
+    /// Changes an event; returns its ID afterwards (see `Provider::update`).
+    pub fn update(&self, id: &str, change: &EventChange) -> Result<String> {
         if change.title.as_deref().is_some_and(|t| t.trim().is_empty()) {
             return Err(Error::bad_request("an event's title can't be empty"));
         }

@@ -87,6 +87,14 @@ pub fn series_of(row: &Value) -> Option<String> {
     (!series.is_empty()).then(|| series.to_string())
 }
 
+/// The UTC day an event starting at `t` is on, as HEY files it (an all-day event's day is its date).
+fn utc_day(t: &Time) -> NaiveDate {
+    match t {
+        Time::At(t) => t.date_naive(),
+        Time::Date(d) => *d,
+    }
+}
+
 /// `hey event add`/`edit` flags for a span, a timed one in `zone` (an IANA name) and named so.
 fn span_args(start: &Time, end: &Time, zone: &(String, chrono_tz::Tz)) -> Vec<String> {
     let day = |d: NaiveDate| d.format("%Y-%m-%d").to_string();
@@ -350,14 +358,10 @@ impl Provider for Hey {
         }
         let data = self.run(&args)?;
         let id = id_of(&data["id"]).ok_or_else(|| self.fail(ErrorKind::AccountUnavailable, "`hey event add` didn't say which event it made"))?;
-        let day = match event.start {
-            Time::At(t) => t.date_naive(),
-            Time::Date(d) => d,
-        };
-        Ok(format!("{}:{id}@{}", self.name, day.format("%Y-%m-%d")))
+        Ok(format!("{}:{id}@{}", self.name, utc_day(&event.start).format("%Y-%m-%d")))
     }
 
-    fn update(&self, id: &str, change: &EventChange) -> Result<()> {
+    fn update(&self, id: &str, change: &EventChange) -> Result<String> {
         let (target, occurrence, day) = self.target(id)?;
         if occurrence {
             return Err(Error::bad_request(
@@ -365,7 +369,9 @@ impl Provider for Hey {
             ));
         }
         let mut args = Self::args(&["event", "edit", &target]);
-        args.extend(day);
+        args.extend(day.clone());
+        // Its ID afterwards: a move to another day changes the day the ID carries.
+        let mut new_id = id.to_string();
         let base_len = args.len();
         if let Some(t) = &change.title {
             args.push(format!("--title={t}"));
@@ -383,11 +389,12 @@ impl Provider for Hey {
             };
             check_span(&s, &e)?;
             args.extend(span_args(&s, &e, &crate::icloud::zone()?));
+            new_id = format!("{}:{target}@{}", self.name, utc_day(&s).format("%Y-%m-%d"));
         }
         if args.len() == base_len {
-            return Ok(());
+            return Ok(new_id);
         }
-        self.run(&args).map(|_| ())
+        self.run(&args).map(|_| new_id)
     }
 
     fn delete(&self, id: &str) -> Result<()> {

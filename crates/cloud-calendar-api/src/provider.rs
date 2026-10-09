@@ -71,7 +71,9 @@ pub trait Provider: Send + Sync {
     fn events(&self, range: &Range) -> Result<Vec<Event>>;
     /// Adds an event; returns its ID.
     fn create(&self, event: &NewEvent) -> Result<String>;
-    fn update(&self, id: &str, change: &EventChange) -> Result<()>;
+    /// Changes an event; returns its ID afterwards, which may differ (a HEY event's carries the day
+    /// it starts on).
+    fn update(&self, id: &str, change: &EventChange) -> Result<String>;
     fn delete(&self, id: &str) -> Result<()>;
     /// What this provider can do to a repeating event here.
     fn series_support(&self) -> SeriesSupport {

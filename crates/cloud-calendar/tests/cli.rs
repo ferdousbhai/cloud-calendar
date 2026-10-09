@@ -257,16 +257,21 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     assert_eq!(code, 2, "a repeating HEY event is read-only: {v}");
     let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--start", "2026-10-14 13:00"], &[]);
     assert_eq!(code, 2, "a HEY move names both ends: {v}");
-    // Without the day it starts on, hey can't find an older event: its error and hint come
-    // through (hey writes them to stderr).
-    let (v, code) = home.json(&["event", "edit", "hey:401", "--title", "Lunch!"], &[]);
+    // Without the day it starts on, hey looks only a year either side of today: its error and
+    // hint come through (hey writes them to stderr).
+    let (v, code) = home.json(&["event", "edit", "hey:403", "--title", "Far"], &[]);
     assert_eq!(code, 4, "{v}");
-    assert!(v["error"]["message"].as_str().unwrap().contains("event 401 not found (hey event edit 401 <YYYY-MM-DD>"), "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("event \"403\" not found (hey event edit 403 <YYYY-MM-DD>"), "{v}");
     let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--title", "Lunch!"], &[]);
-    assert_eq!(code, 0, "{v}");
-    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--start", "2026-10-14 13:00", "--end", "2026-10-14 14:30", "--location", ""], &[]);
-    assert_eq!(code, 0, "{v}");
+    assert_eq!((code, v["data"]["id"].as_str()), (0, Some("hey:401@2026-10-14")), "{v}");
+    // A move to another day returns the ID that carries the new day, and the next edit uses it.
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--start", "2026-10-20 13:00", "--end", "2026-10-20 14:30", "--location", ""], &[]);
+    assert_eq!((code, v["data"]["id"].as_str()), (0, Some("hey:401@2026-10-20")), "{v}");
     assert_eq!(v["meta"]["warnings"][0]["code"], "edit_side_effects", "a HEY edit says what it drops: {v}");
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-20", "--title", "Lunch moved"], &[]);
+    assert_eq!(code, 0, "the returned ID finds the moved event: {v}");
+    let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--title", "Stale"], &[]);
+    assert_eq!(code, 4, "the old day no longer finds it: {v}");
     let (v, code) = home.json(&["event", "delete", "hey:500~20261013T060000Z", "--yes"], &[]);
     assert_eq!(code, 0, "{v}");
     let writes: Vec<String> = home.file("hey.log").lines().filter(|l| l.starts_with("event\t")).map(str::to_string).collect();
@@ -275,9 +280,11 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
         vec![
             "event\tadd\t--title=Dinner\t--calendar\t11\t--time-zone\tUTC\t--starts-on\t2026-10-15\t--start-time\t19:00\t--ends-on\t2026-10-15\t--end-time\t21:00\t--notes\tbring wine",
             "event\tadd\t--title=-Away\t--calendar\t11\t--all-day\t--starts-on\t2026-10-20\t--ends-on\t2026-10-22",
-            "event\tedit\t401\t--title=Lunch!",
+            "event\tedit\t403\t--title=Far",
             "event\tedit\t401\t2026-10-14\t--title=Lunch!",
-            "event\tedit\t401\t2026-10-14\t--location\t\t--time-zone\tUTC\t--all-day=false\t--starts-on\t2026-10-14\t--start-time\t13:00\t--ends-on\t2026-10-14\t--end-time\t14:30",
+            "event\tedit\t401\t2026-10-14\t--location\t\t--time-zone\tUTC\t--all-day=false\t--starts-on\t2026-10-20\t--start-time\t13:00\t--ends-on\t2026-10-20\t--end-time\t14:30",
+            "event\tedit\t401\t2026-10-20\t--title=Lunch moved",
+            "event\tedit\t401\t2026-10-14\t--title=Stale",
             "event\tdelete\t500",
         ]
     );

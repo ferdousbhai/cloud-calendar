@@ -449,7 +449,7 @@ impl Provider for Google {
         Ok(format!("{}:{cal}/{id}", self.name))
     }
 
-    fn update(&self, id: &str, change: &EventChange) -> Result<()> {
+    fn update(&self, id: &str, change: &EventChange) -> Result<String> {
         let (_, _, occurrence) = self.event_ref(id)?;
         if occurrence {
             provider::refuse_series_move("Google", change)?;
@@ -474,9 +474,9 @@ impl Provider for Google {
             body.insert("end".into(), patch_when_json(&e));
         }
         if body.is_empty() {
-            return Ok(());
+            return Ok(id.to_string());
         }
-        self.call("events", "patch", json!({ "calendarId": cal, "eventId": target }), Some(&Value::Object(body))).map(|_| ())
+        self.call("events", "patch", json!({ "calendarId": cal, "eventId": target }), Some(&Value::Object(body))).map(|_| id.to_string())
     }
 
     fn delete(&self, id: &str) -> Result<()> {

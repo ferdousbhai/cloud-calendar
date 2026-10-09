@@ -248,14 +248,15 @@ fn event(e: EventCommand) -> api::Result<Out> {
             if change.is_empty() {
                 return Err(Error::bad_request("nothing to change: give --title, --start, --end, --location or --notes"));
             }
-            c.update(&a.id, &change)?;
+            let id = c.update(&a.id, &change)?;
             let caveat = c.edit_caveat(&a.id);
-            let mut out = Out::new(json!({ "id": a.id }), format!("changed {}", a.id));
+            let summary = if id == a.id { format!("changed {id}") } else { format!("changed {} (now {id})", a.id) };
+            let mut out = Out::new(json!({ "id": id }), summary);
             if let Some(message) = caveat {
                 let account = a.id.split_once(':').map(|(n, _)| n).unwrap_or_default().to_string();
                 out.warnings.push(api::AccountWarning { account, code: "edit_side_effects".into(), message });
             }
-            out.ids = vec![a.id];
+            out.ids = vec![id];
             Ok(out)
         }
         EventCommand::Delete { id, yes } => {

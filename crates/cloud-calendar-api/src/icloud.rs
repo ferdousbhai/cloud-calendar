@@ -379,7 +379,7 @@ impl Provider for ICloud {
         Ok(format!("{}:{pguid}/{guid}", self.name))
     }
 
-    fn update(&self, id: &str, change: &EventChange) -> Result<()> {
+    fn update(&self, id: &str, change: &EventChange) -> Result<String> {
         let (pguid, guid) = self.event_ref(id, "change")?;
         let local = zone()?;
         let (mut ev, detail, etag) = self.detail(pguid, guid)?;
@@ -405,7 +405,7 @@ impl Provider for ICloud {
         let (from, to) = (s.instant().min(start.instant()).with_timezone(&local.1).date_naive(), e.instant().max(end.instant()).with_timezone(&local.1).date_naive());
         let mut params = self.common(&local.0, from, to);
         params.extend([("methodOverride", "PUT".to_string()), ("ifMatch", etag)]);
-        self.post(&format!("events/{pguid}/{guid}"), &params, &body).map(|_| ())
+        self.post(&format!("events/{pguid}/{guid}"), &params, &body).map(|_| id.to_string())
     }
 
     fn delete(&self, id: &str) -> Result<()> {

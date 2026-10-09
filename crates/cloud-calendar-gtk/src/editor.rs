@@ -318,7 +318,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
                     return error.set_text("Nothing changed.");
                 }
                 let id = e.id.clone();
-                run(Box::new(move || cals.update(&id, &change)));
+                run(Box::new(move || cals.update(&id, &change).map(|_| ())));
             }
         }
     }));
