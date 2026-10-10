@@ -108,9 +108,7 @@ pub fn add(name: Option<&str>, link: Link) -> Result<(String, String)> {
     free(&config::load()?)?;
     let mut cfg = AccountConfig { provider: (name != provider).then(|| provider.to_string()), ..Default::default() };
     match &link {
-        Link::ICloud => {}
-        // Before anything is saved: a build without a Google client can't sign in.
-        Link::Google => Google::new(&name, &cfg).require_client()?,
+        Link::ICloud | Link::Google => {}
         Link::Hey { account } => cfg.account = account.clone().filter(|a| !a.trim().is_empty()),
     }
     let note = sign_in(&name, &cfg)?;

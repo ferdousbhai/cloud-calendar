@@ -65,8 +65,7 @@ whole series isn't established well enough to rely on. Use the Calendar app or i
 
 Google Calendar goes through Google's own [Workspace CLI `gws`](https://github.com/googleworkspace/cli),
 the way cloud-mail reaches Gmail, with one browser sign-in and no Google Cloud setup of your own:
-Cloud Calendar brings its own Google sign-in. (Not yet in this build: until the built-in client is
-filled in, adding Google says sign-in isn't configured; see [Google sign-in](#google-sign-in-maintainers).)
+Cloud Calendar brings its own Google sign-in.
 
 ```sh
 npm install -g @googleworkspace/cli
@@ -214,8 +213,8 @@ added to `provider::open`.
 ### Google sign-in (maintainers)
 
 Cloud Calendar's Google sign-in is one OAuth client, `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in
-`crates/cloud-calendar-api/src/google.rs` (a desktop client's secret isn't secret). It is meant to
-be cloud-mail's "Desktop app" client, in cloud-mail's Google Cloud project, which has:
+`crates/cloud-calendar-api/src/google.rs` (a desktop client's secret isn't secret): cloud-mail's
+"Desktop app" client, in cloud-mail's Google Cloud project, which has:
 
 - the **Google Calendar API** enabled (done);
 - an OAuth consent screen published "In production" (test-mode sign-ins expire after 7 days).
@@ -225,8 +224,6 @@ The calendar scopes (`https://www.googleapis.com/auth/calendar.events` and
 screen. Sign-in works without that, with the same "Google hasn't verified this app" warning as
 Gmail's; listing them only matters for Google's app verification.
 
-The constants are empty in this repository, so adding Google currently says sign-in isn't
-configured. Fill them with cloud-mail's client (`crates/cloudmail-api/src/gmail.rs`) to turn it on.
 A build can also use its own client with `CLOUD_CALENDAR_GOOGLE_CLIENT_ID` /
 `CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET`.
 
