@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-/// The Google OAuth client the tests' builds use (the built-in one is empty until filled in).
+/// The Google OAuth client the tests use in place of the built-in one.
 const GOOGLE_SECRET: &str = "GOCSPX-test-secret";
 
 struct Home {
@@ -204,12 +204,10 @@ fn icloud_add_change_delete() {
 #[test]
 fn google_signs_in_with_the_built_in_client() {
     let home = Home::new("google", true);
-    // A build without a Google client says so, and links nothing.
-    let (v, code) = home.json(&["account", "add", "google"], &[("CLOUD_CALENDAR_GOOGLE_CLIENT_ID", ""), ("CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET", "")]);
-    assert_eq!(code, 3, "{v}");
-    assert!(v["error"]["message"].as_str().unwrap().contains("isn't configured"), "{v}");
-    assert!(home.file("config/cloud-calendar/config.toml").is_empty());
-    home.link_google();
+    // With no client of its own set, gws gets the built-in one.
+    let builtin = [("CLOUD_CALENDAR_GOOGLE_CLIENT_ID", ""), ("CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET", ""), ("FAKE_GWS_SECRET", cloud_calendar_api::google::GOOGLE_CLIENT_SECRET)];
+    let (v, code) = home.json(&["account", "add", "google"], &builtin);
+    assert_eq!(code, 0, "{v}");
     assert_eq!(home.file("config/cloud-calendar/config.toml").trim(), "[accounts.google]", "no client details kept");
 
     let (v, code) = home.json(&["event", "add", "--calendar", "google:me@gmail.com", "--title", "Call", "--start", "2026-10-15 09:00"], &[]);

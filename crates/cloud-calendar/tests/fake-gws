@@ -5,7 +5,7 @@
 #   FAKE_GWS_LOG=<file>   append each invocation's arguments (tab-separated) to <file>
 #   FAKE_GWS_MODE=ok (default) | expired | offline
 [[ -n "$FAKE_GWS_LOG" ]] && (IFS=$'\t'; printf '%s\n' "$*") >> "$FAKE_GWS_LOG"
-# The OAuth client comes from the keyring through the environment; anything else is refused.
+# The OAuth client comes through the environment; any other client is refused.
 [[ "$GOOGLE_WORKSPACE_CLI_CLIENT_SECRET" == "${FAKE_GWS_SECRET:?}" && -n "$GOOGLE_WORKSPACE_CLI_CLIENT_ID" ]] || { echo '{"error":{"code":401,"message":"invalid_client"}}'; exit 2; }
 if [[ "$1 $2" == "auth login" ]]; then
   echo "Open this URL: https://accounts.google.com/o/oauth2/auth?x" >&2

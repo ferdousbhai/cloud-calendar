@@ -39,11 +39,10 @@ use crate::types::*;
 pub const COMMAND_ENV: &str = "CLOUD_CALENDAR_GWS_COMMAND";
 /// Cloud Calendar's own Google OAuth client, a "Desktop app" client in cloud-mail's Google Cloud
 /// project with the Google Calendar API enabled. Google treats a desktop client's secret as
-/// public, so it ships in the binary, as cloud-mail's does. Empty until the maintainer fills them
-/// in; until then adding Google says sign-in isn't configured. `CLOUD_CALENDAR_GOOGLE_CLIENT_ID` /
-/// `_SECRET` let a build use its own client instead.
-pub const GOOGLE_CLIENT_ID: &str = "";
-pub const GOOGLE_CLIENT_SECRET: &str = "";
+/// public, so it ships in the binary, as cloud-mail's does. `CLOUD_CALENDAR_GOOGLE_CLIENT_ID` /
+/// `_SECRET`, both set, use another client instead.
+pub const GOOGLE_CLIENT_ID: &str = "858534886670-37fmq8bl312beufkc420h9nvtjrb4l0d.apps.googleusercontent.com";
+pub const GOOGLE_CLIENT_SECRET: &str = "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";
 pub const CLIENT_ID_ENV: &str = "CLOUD_CALENDAR_GOOGLE_CLIENT_ID";
 pub const CLIENT_SECRET_ENV: &str = "CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET";
 /// The program that opens the sign-in link (default: xdg-open).
@@ -61,7 +60,7 @@ pub struct Google {
     name: String,
     command: String,
     dir: PathBuf,
-    client: Option<(String, String)>,
+    client: (String, String),
 }
 
 fn text(v: &Value) -> String {
@@ -120,8 +119,7 @@ impl Google {
     pub fn new(name: &str, _cfg: &AccountConfig) -> Self {
         let command = nonblank(std::env::var(COMMAND_ENV).ok()).unwrap_or_else(|| "gws".into());
         let env = |k| nonblank(std::env::var(k).ok());
-        let builtin = (nonblank(Some(GOOGLE_CLIENT_ID.to_string())), nonblank(Some(GOOGLE_CLIENT_SECRET.to_string())));
-        let client = [(env(CLIENT_ID_ENV), env(CLIENT_SECRET_ENV)), builtin].into_iter().find_map(|(id, secret)| Some((id?, secret?)));
+        let client = env(CLIENT_ID_ENV).zip(env(CLIENT_SECRET_ENV)).unwrap_or_else(|| (GOOGLE_CLIENT_ID.into(), GOOGLE_CLIENT_SECRET.into()));
         Self { name: name.into(), command, dir: gws_dir(name), client }
     }
 
@@ -141,19 +139,8 @@ impl Google {
         self.fail(ErrorKind::AccountUnavailable, format!("Google's Workspace CLI isn't installed (no `{}` on PATH); {INSTALL_HINT}", self.command))
     }
 
-    /// Fails, saying so, when this build has no Google OAuth client to sign in with.
-    pub fn require_client(&self) -> Result<()> {
-        self.client().map(|_| ())
-    }
-
-    fn client(&self) -> Result<(String, String)> {
-        self.client.clone().ok_or_else(|| {
-            Error::new(ErrorKind::Config, format!("Google sign-in isn't configured in this build of Cloud Calendar (no Google OAuth client; set {CLIENT_ID_ENV} and {CLIENT_SECRET_ENV} to use one of your own)"))
-        })
-    }
-
-    fn gws(&self) -> Result<Command> {
-        let (id, secret) = self.client()?;
+    fn gws(&self) -> Command {
+        let (id, secret) = &self.client;
         let mut cmd = Command::new(&self.command);
         // gws also reads a .env from its working directory.
         cmd.current_dir(if self.dir.is_dir() { self.dir.clone() } else { std::env::temp_dir() })
@@ -164,13 +151,13 @@ impl Google {
             .env_remove("GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE")
             .env("GOOGLE_WORKSPACE_CLI_CLIENT_ID", id)
             .env("GOOGLE_WORKSPACE_CLI_CLIENT_SECRET", secret);
-        Ok(cmd)
+        cmd
     }
 
     /// Google's browser sign-in through `gws auth login`: gws prints a link, opened here in the
     /// browser, and waits for Google to send the browser back.
     pub fn login(&self) -> Result<()> {
-        let mut cmd = self.gws()?;
+        let mut cmd = self.gws();
         crate::config::private_dir(&self.dir).map_err(|e| self.fail(ErrorKind::AccountUnavailable, format!("could not create {}: {e}", self.dir.display())))?;
         cmd.current_dir(&self.dir).args(["auth", "login", "--scopes", SCOPES]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = cmd.spawn().map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { self.missing() } else { self.fail(ErrorKind::AccountUnavailable, e.to_string()) })?;
@@ -231,7 +218,7 @@ impl Google {
             return Err(self.fail(ErrorKind::AccountAuth, format!("not signed in; run `cloud-calendar account login {}`", self.name)));
         }
         let what = format!("{resource} {method}");
-        let mut cmd = self.gws()?;
+        let mut cmd = self.gws();
         cmd.args(["calendar", resource, method]).arg("--params").arg(params.to_string());
         if let Some(b) = body {
             cmd.arg("--json").arg(b.to_string());
