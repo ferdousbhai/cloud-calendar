@@ -86,9 +86,15 @@ pub struct ICloud {
 }
 
 /// The local time zone's IANA name and zone: `TZ` when set (as for every other program),
-/// else the system's.
+/// else the system's, which is UTC with no /etc/localtime (localtime(5); Omarchy leaves it out
+/// until a zone is picked).
 pub fn zone() -> Result<(String, Tz)> {
-    let system = || iana_time_zone::get_timezone().map_err(|e| Error::new(ErrorKind::Config, format!("this computer's time zone is unknown ({e})")));
+    let system = || {
+        if std::fs::symlink_metadata("/etc/localtime").is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
+            return Ok("UTC".to_string());
+        }
+        iana_time_zone::get_timezone().map_err(|e| Error::new(ErrorKind::Config, format!("this computer's time zone is unknown ({e})")))
+    };
     let name = match std::env::var("TZ").ok().as_deref().and_then(tz_name) {
         Some(name) => name,
         // TZ unset, or a value with no IANA name in it (POSIX rules such as `EST5EDT`): the
