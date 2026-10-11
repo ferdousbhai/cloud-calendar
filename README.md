@@ -32,8 +32,8 @@ curl -fsSL https://github.com/ferdousbhai/cloud-calendar/releases/latest/downloa
 systemctl --user enable --now cloud-calendar-notify.timer   # event notifications
 ```
 
-The installer trusts the package-signing key (pinned by fingerprint, the same key cloud-mail and
-icloud-for-omarchy use), adds the `[cloud-calendar]` repository (`[cloud-calendar-aarch64]` on ARM)
+The installer trusts the package-signing key (pinned by fingerprint, the same key cloud-mail,
+icloud-for-omarchy, ghost and omacloud use), adds the `[cloud-calendar]` repository (`[cloud-calendar-aarch64]` on ARM)
 and installs the package; updates then arrive with `omarchy update`. Before the first release,
 `cargo build --release` in a checkout builds `target/release/cloud-calendar` and
 `target/release/cloud-calendar-gtk`. iCloud calendars need icloud-session (from
