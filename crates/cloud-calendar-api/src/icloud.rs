@@ -178,14 +178,14 @@ fn span_fields(start: &Time, end: &Time, local: &(String, Tz)) -> serde_json::Ma
     m
 }
 
-fn upper_uuid() -> String {
-    // A random-enough v4-shaped GUID: time, process and a counter, never repeated on one machine.
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let mix = nanos ^ (u128::from(std::process::id()) << 64) ^ (u128::from(COUNTER.fetch_add(1, Ordering::Relaxed)) << 96);
-    let hex = format!("{mix:032X}");
-    format!("{}-{}-4{}-A{}-{}", &hex[0..8], &hex[8..12], &hex[13..16], &hex[17..20], &hex[20..32])
+fn upper_uuid() -> std::io::Result<String> {
+    // A version-4 GUID from the kernel's random bytes, upper-case like Apple's own.
+    let mut b = [0u8; 16];
+    std::io::Read::read_exact(&mut std::fs::File::open("/dev/urandom")?, &mut b)?;
+    b[6] = b[6] & 0x0f | 0x40;
+    b[8] = b[8] & 0x3f | 0x80;
+    let hex: String = b.iter().map(|x| format!("{x:02X}")).collect();
+    Ok(format!("{}-{}-{}-{}-{}", &hex[0..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..32]))
 }
 
 fn percent(s: &str) -> String {
@@ -378,7 +378,7 @@ impl Provider for ICloud {
         let local = zone()?;
         let pguid = provider::local_id(&self.name, "iCloud", &event.calendar_id)?;
         let ctag = self.ctag(pguid)?;
-        let guid = upper_uuid();
+        let guid = upper_uuid().map_err(|e| self.fail(ErrorKind::AccountUnavailable, format!("can't read /dev/urandom for a new event ID: {e}")))?;
         let now = apple_date(Utc::now().with_timezone(&local.1).naive_local());
         let mut ev = json!({
             "title": event.title, "icon": 0, "pGuid": pguid, "guid": guid,
@@ -455,6 +455,17 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn new_event_guids_are_random_v4() {
+        let (a, b) = (upper_uuid().unwrap(), upper_uuid().unwrap());
+        let parts: Vec<&str> = a.split('-').collect();
+        assert_eq!(parts.iter().map(|p| p.len()).collect::<Vec<_>>(), [8, 4, 4, 4, 12], "{a}");
+        assert!(a.chars().all(|c| c == '-' || c.is_ascii_digit() || c.is_ascii_uppercase()), "{a}");
+        assert!(parts[2].starts_with('4') && "89AB".contains(&parts[3][..1]), "{a}");
+        // The leading digits vary too, not only the clock-driven tail.
+        assert_ne!(a[..13], b[..13]);
+    }
 
     #[test]
     fn reads_apple_dates_in_the_event_zone() {
