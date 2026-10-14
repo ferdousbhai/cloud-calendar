@@ -1,9 +1,8 @@
 name: Native packages
+# Builds the release packages for a version tag; changes are checked locally by bin/check.
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: read

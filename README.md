@@ -236,7 +236,7 @@ A build can also use its own client with `CLOUD_CALENDAR_GOOGLE_CLIENT_ID` /
 ### Releasing (maintainers)
 
 Native CI (`.github/workflows/packages.yml`) builds and tests the package on x86_64 and aarch64
-runners for every push and pull request. To release version X.Y.Z, bump `version` in `Cargo.toml`
+runners for each version tag; `bin/check` checks every change locally before a push. To release version X.Y.Z, bump `version` in `Cargo.toml`
 and `pkgver` in `packaging/aur/cloud-calendar/PKGBUILD`, commit, then:
 
 ```sh

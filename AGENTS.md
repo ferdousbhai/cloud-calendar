@@ -30,7 +30,7 @@ event notifications through `omarchy-notification-send`. Calendar sibling of clo
 bin/check                        # rustfmt, clippy -D warnings, tests, installer tests; .githooks/pre-push runs it
 git config core.hooksPath .githooks   # once per clone (NO_CHECK=1 skips the hook)
 cargo build --release            # target/release/cloud-calendar and cloud-calendar-gtk
-bash packaging/repo/test.sh && python3 packaging/repo/test_arch.py   # installer tests (CI)
+bash packaging/repo/test.sh && python3 packaging/repo/test_arch.py   # installer tests (in bin/check)
 bin/build-package x86_64         # full package build in Docker, needs a native runner
 ```
 
