@@ -66,6 +66,7 @@ const SKILL: agent_skill::Skill = agent_skill::Skill {
     body: include_str!("../../../skills/cloud-calendar/SKILL.md"),
     cli: "cloud-calendar",
     version: env!("CARGO_PKG_VERSION"),
+    adopts_legacy: false,
 };
 
 fn main() {

@@ -152,8 +152,7 @@ can be deleted (the whole series) but not changed here: change it in HEY.
 ([skills/cloud-calendar/SKILL.md](skills/cloud-calendar/SKILL.md)) to `~/.agents/skills/cloud-calendar`
 for Codex, Pi and others, linked into `~/.claude/skills` for Claude Code; `cloud-calendar skill remove`
 removes it, and a new release refreshes it automatically. Only a copy cloud-calendar wrote (marked
-`.managed-by-cloud-calendar`) is ever changed. Before cloud-calendar is installed:
-`npx skills add ferdousbhai/cloud-calendar -g`.
+`.managed-by-cloud-calendar`) is ever changed.
 
 Piped output is a JSON envelope:
 
