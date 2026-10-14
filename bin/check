@@ -1,0 +1,29 @@
+#!/bin/bash
+# Every check a change must pass, run on this machine. .githooks/pre-push runs it before a push
+# (NO_CHECK=1 skips it); enable the hook once per clone with `git config core.hooksPath .githooks`.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export PATH="$HOME/.cargo/bin:$PATH"
+
+step() { printf '\n==> %s\n' "$*"; }
+
+# The desktop app needs GTK 4 and libadwaita; without them only the CLI and the library are checked.
+crates=(--workspace)
+if ! pkg-config --exists gtk4 libadwaita-1 2>/dev/null; then
+  echo "note: skipping cloud-calendar-gtk (install gtk4 and libadwaita to check it)" >&2
+  crates+=(--exclude cloud-calendar-gtk)
+fi
+
+step "rustfmt (fix with: cargo fmt --all)"
+cargo fmt --all -- --check
+step "clippy"
+cargo clippy --locked "${crates[@]}" --all-targets -- -D warnings
+step "cargo test"
+cargo test --locked "${crates[@]}"
+
+step "packaging"
+bash packaging/repo/test.sh
+python3 packaging/repo/test_arch.py
+bash -n bin/build-package bin/release bin/verify-release .githooks/pre-push
+
+printf '\nAll checks passed.\n'
