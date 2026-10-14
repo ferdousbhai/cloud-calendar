@@ -148,6 +148,9 @@ can be deleted (the whole series) but not changed here: change it in HEY.
 
 ### For agents
 
+Install the agent skill ([skills/cloud-calendar/SKILL.md](skills/cloud-calendar/SKILL.md)) with
+`npx skills add ferdousbhai/cloud-calendar -g`.
+
 Piped output is a JSON envelope:
 
 ```json
