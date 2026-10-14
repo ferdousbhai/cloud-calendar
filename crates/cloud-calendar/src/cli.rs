@@ -58,12 +58,25 @@ pub enum Command {
     /// Add, change or delete an event
     #[command(subcommand)]
     Event(EventCommand),
+    /// Print the agent skill (SKILL.md) built into cloud-calendar, or install it for your coding agents
+    Skill {
+        #[command(subcommand)]
+        command: Option<SkillCommand>,
+    },
     /// Send notifications for events starting soon (run every minute by cloud-calendar-notify.timer)
     Notify {
         /// Read the accounts now instead of the cached next day
         #[arg(long)]
         refresh: bool,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SkillCommand {
+    /// Copy SKILL.md to ~/.agents/skills/cloud-calendar/ and link it into ~/.claude/skills/ when Claude Code is installed
+    Install,
+    /// Remove the skill and link that `skill install` created; anything else is left alone
+    Remove,
 }
 
 #[derive(Subcommand, Debug)]

@@ -1,3 +1,4 @@
+mod agent_skill;
 mod cli;
 mod render;
 
@@ -60,13 +61,27 @@ fn exit_code(kind: ErrorKind) -> i32 {
     }
 }
 
+const SKILL: agent_skill::Skill = agent_skill::Skill {
+    name: "cloud-calendar",
+    body: include_str!("../../../skills/cloud-calendar/SKILL.md"),
+    cli: "cloud-calendar",
+    version: env!("CARGO_PKG_VERSION"),
+};
+
 fn main() {
     let cli = Cli::parse();
     let mode = Mode::from(&cli.global);
+    if let Some(home) = agent_skill::home() {
+        agent_skill::refresh(&home, &SKILL);
+    }
     let Some(command) = cli.command else {
         let _ = <Cli as clap::CommandFactory>::command().print_help();
         return;
     };
+    if let Command::Skill { command: None } = command {
+        print!("{}", SKILL.body);
+        return;
+    }
     match run(command) {
         Ok(out) => {
             let mut stdout = std::io::stdout().lock();
@@ -149,6 +164,7 @@ fn run(command: Command) -> api::Result<Out> {
             agenda(Range::days(monday, 7)?, format!("the week of {monday}"))
         }
         Command::Event(e) => event(e),
+        Command::Skill { command } => skill(command),
         Command::Notify { refresh } => {
             let (config, c) = load()?;
             let report = api::notify::run(&c, &config.notify_minutes(), chrono::Utc::now(), refresh);
@@ -183,6 +199,23 @@ fn status() -> api::Result<Out> {
     });
     let mut out = Out::new(data, format!("{} accounts, {} working", statuses.len(), statuses.iter().filter(|s| s.ok).count()));
     out.human = format!("config: {}\n{}", path.display(), render::accounts(&statuses, &c.broken));
+    Ok(out)
+}
+
+fn skill(command: Option<SkillCommand>) -> api::Result<Out> {
+    let home = agent_skill::home().ok_or_else(|| Error::new(ErrorKind::Config, "no home directory to install the skill into"))?;
+    let (result, done, summary) = match command {
+        Some(SkillCommand::Remove) => (agent_skill::remove(&home, &SKILL), "Removed", "Removed the cloud-calendar skill"),
+        _ => (agent_skill::install(&home, &SKILL), "Installed", "Installed the cloud-calendar skill"),
+    };
+    let o = result.map_err(|e| {
+        let kind = if e.kind() == std::io::ErrorKind::AlreadyExists { ErrorKind::BadRequest } else { ErrorKind::Config };
+        Error::new(kind, e.to_string())
+    })?;
+    let mut out = Out::new(json!({ "paths": o.paths, "notices": o.notices }), summary);
+    let mut lines: Vec<String> = o.paths.iter().map(|p| format!("{done} {}", p.display())).collect();
+    lines.extend(o.notices);
+    out.human = if lines.is_empty() { "Nothing to do.".into() } else { lines.join("\n") };
     Ok(out)
 }
 
