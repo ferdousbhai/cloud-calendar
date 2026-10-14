@@ -75,8 +75,37 @@ const SKILL: agent_skill::Skill = agent_skill::Skill {
     adopts_legacy: false,
 };
 
+/// Parses the command line; a usage error is a JSON error (code `usage`, exit 2) unless output is text.
+fn parse() -> Cli {
+    match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => {
+            use clap::error::ErrorKind as Clap;
+            let raw: Vec<String> = std::env::args().skip(1).collect();
+            let text = raw.iter().any(|a| a == "--styled")
+                || (std::io::stdout().is_terminal() && !raw.iter().any(|a| a == "--json"));
+            if text || matches!(e.kind(), Clap::DisplayHelp | Clap::DisplayVersion) {
+                e.exit();
+            }
+            let rendered = e.render().to_string();
+            let message = rendered
+                .lines()
+                .next()
+                .unwrap_or("invalid arguments")
+                .trim_start_matches("error: ")
+                .trim();
+            let hint = "run `cloud-calendar --help` or `cloud-calendar <command> --help`";
+            println!(
+                "{}",
+                json!({ "ok": false, "error": { "code": "usage", "message": message, "hint": hint } })
+            );
+            std::process::exit(2);
+        }
+    }
+}
+
 fn main() {
-    let cli = Cli::parse();
+    let cli = parse();
     let mode = Mode::from(&cli.global);
     if let Some(home) = agent_skill::home() {
         agent_skill::refresh(&home, &SKILL);

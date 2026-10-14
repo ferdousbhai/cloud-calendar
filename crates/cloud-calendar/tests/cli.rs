@@ -796,3 +796,12 @@ fn accounts_linked_at_once_both_stay() {
         "{config}"
     );
 }
+
+#[test]
+fn usage_errors_are_json_with_exit_2_when_piped() {
+    let home = Home::new("usage", false);
+    let (v, code) = home.json(&["no-such-command"], &[]);
+    assert_eq!(code, 2, "{v}");
+    assert_eq!(v["error"]["code"], "usage", "{v}");
+    assert!(v["error"]["hint"].as_str().unwrap().contains("--help"), "{v}");
+}
