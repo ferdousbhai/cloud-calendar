@@ -66,7 +66,10 @@ pub fn state_path() -> std::path::PathBuf {
 }
 
 fn load_state() -> State {
-    std::fs::read(state_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    std::fs::read(state_path())
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
 }
 
 fn save_state(s: &State) {
@@ -79,7 +82,14 @@ pub fn upcoming(events: &[Event]) -> Vec<Upcoming> {
     events
         .iter()
         .filter_map(|e| match (e.start, e.end) {
-            (Time::At(start), Time::At(end)) => Some(Upcoming { id: e.id.clone(), title: e.title.clone(), start, end, location: e.location.clone(), calendar: e.calendar.clone() }),
+            (Time::At(start), Time::At(end)) => Some(Upcoming {
+                id: e.id.clone(),
+                title: e.title.clone(),
+                start,
+                end,
+                location: e.location.clone(),
+                calendar: e.calendar.clone(),
+            }),
             _ => None,
         })
         .collect()
@@ -97,17 +107,35 @@ pub struct Due {
 /// What is due at `now`: per event, the nearest lead time that has passed while the event hasn't
 /// started, unless already sent. Marking every passed lead sent (after a successful send) keeps a
 /// farther lead from firing later.
-pub fn due(upcoming: &[Upcoming], leads: &[u32], now: DateTime<Utc>, sent: &BTreeMap<String, DateTime<Utc>>) -> Vec<Due> {
+pub fn due(
+    upcoming: &[Upcoming],
+    leads: &[u32],
+    now: DateTime<Utc>,
+    sent: &BTreeMap<String, DateTime<Utc>>,
+) -> Vec<Due> {
     let mut out = Vec::new();
     for e in upcoming {
         if e.start <= now {
             continue;
         }
-        let mut passed: Vec<u32> = leads.iter().copied().filter(|m| e.start - chrono::Duration::minutes(i64::from(*m)) <= now).collect();
+        let mut passed: Vec<u32> = leads
+            .iter()
+            .copied()
+            .filter(|m| e.start - chrono::Duration::minutes(i64::from(*m)) <= now)
+            .collect();
         passed.sort_unstable();
-        let keys: Vec<String> = passed.iter().map(|m| format!("{}|{}|{m}", e.id, e.start.timestamp())).collect();
-        if keys.iter().any(|k| !sent.contains_key(k)) && let Some(m) = passed.first() {
-            out.push(Due { event: e.clone(), minutes: *m, keys });
+        let keys: Vec<String> = passed
+            .iter()
+            .map(|m| format!("{}|{}|{m}", e.id, e.start.timestamp()))
+            .collect();
+        if keys.iter().any(|k| !sent.contains_key(k))
+            && let Some(m) = passed.first()
+        {
+            out.push(Due {
+                event: e.clone(),
+                minutes: *m,
+                keys,
+            });
         }
     }
     out
@@ -125,7 +153,11 @@ pub fn merge_refresh(previous: Vec<Upcoming>, fresh: Vec<Upcoming>, failed: &[St
 /// The notification's body: "in 10 min · 14:00–15:00 · Room 2 · Work".
 pub fn body(e: &Upcoming, now: DateTime<Utc>) -> String {
     let mins = (e.start - now).num_seconds().max(0).div_euclid(60) + i64::from((e.start - now).num_seconds() % 60 > 0);
-    let when = if mins <= 1 { "starting now".to_string() } else { format!("in {mins} min") };
+    let when = if mins <= 1 {
+        "starting now".to_string()
+    } else {
+        format!("in {mins} min")
+    };
     let (s, t) = (e.start.with_timezone(&Local), e.end.with_timezone(&Local));
     let mut parts = vec![when, format!("{}–{}", s.format("%H:%M"), t.format("%H:%M"))];
     if let Some(l) = &e.location {
@@ -140,8 +172,22 @@ pub fn body(e: &Upcoming, now: DateTime<Utc>) -> String {
 /// Shows one notification; clicking it opens the app. `CLOUD_CALENDAR_NOTIFY_COMMAND` names
 /// another program taking the same arguments (the tests' recorder).
 pub fn send(title: &str, body: &str) -> Result<(), String> {
-    let program = std::env::var(COMMAND_ENV).ok().filter(|c| !c.trim().is_empty()).unwrap_or_else(|| "omarchy-notification-send".into());
-    let args = ["--app-name", "Cloud Calendar", "-g", "󰃭", "-u", "normal", title, body, "--exec", "cloud-calendar-gtk"];
+    let program = std::env::var(COMMAND_ENV)
+        .ok()
+        .filter(|c| !c.trim().is_empty())
+        .unwrap_or_else(|| "omarchy-notification-send".into());
+    let args = [
+        "--app-name",
+        "Cloud Calendar",
+        "-g",
+        "󰃭",
+        "-u",
+        "normal",
+        title,
+        body,
+        "--exec",
+        "cloud-calendar-gtk",
+    ];
     match run_command(Command::new(&program).args(args), None, Duration::from_secs(15)) {
         Run::Done { status, .. } if status.success() => Ok(()),
         Run::Done { status, stderr, .. } => Err(format!("{program} failed ({status}): {stderr}")),
@@ -156,7 +202,10 @@ pub fn run(calendars: &Calendars, leads: &[u32], now: DateTime<Utc>, force_refre
     let mut state = load_state();
     let mut report = Report::default();
     if force_refresh || state.fetched_at.is_none_or(|t| now - t >= REFRESH || t > now) {
-        let listing = calendars.events(&Range { start: now - chrono::Duration::minutes(1), end: now + LOOKAHEAD });
+        let listing = calendars.events(&Range {
+            start: now - chrono::Duration::minutes(1),
+            end: now + LOOKAHEAD,
+        });
         let failed: Vec<String> = listing.warnings.iter().map(|w| w.account.clone()).collect();
         state.upcoming = merge_refresh(std::mem::take(&mut state.upcoming), upcoming(&listing.items), &failed);
         // A refresh some account didn't answer isn't fresh: the next run asks again.
@@ -171,7 +220,12 @@ pub fn run(calendars: &Calendars, leads: &[u32], now: DateTime<Utc>, force_refre
                 for k in d.keys {
                     state.sent.insert(k, e.start);
                 }
-                report.sent.push(Sent { id: e.id.clone(), title: e.title.clone(), start: e.start, minutes_before: d.minutes });
+                report.sent.push(Sent {
+                    id: e.id.clone(),
+                    title: e.title.clone(),
+                    start: e.start,
+                    minutes_before: d.minutes,
+                });
             }
             // Not marked sent, so the next run tries again while the event hasn't started.
             Err(message) => report.failed.push(message),
@@ -190,7 +244,14 @@ mod tests {
 
     fn ev(id: &str, h: u32, m: u32) -> Upcoming {
         let start = Utc.with_ymd_and_hms(2026, 10, 9, h, m, 0).unwrap();
-        Upcoming { id: id.into(), title: id.into(), start, end: start + chrono::Duration::hours(1), location: None, calendar: "Work".into() }
+        Upcoming {
+            id: id.into(),
+            title: id.into(),
+            start,
+            end: start + chrono::Duration::hours(1),
+            location: None,
+            calendar: "Work".into(),
+        }
     }
 
     fn ids(d: &[Due]) -> Vec<(&str, u32)> {
@@ -219,7 +280,11 @@ mod tests {
         let d = due(&list, &[30, 5], at(14, 57), &BTreeMap::new());
         assert_eq!(ids(&d), vec![("b", 5)]);
         // A started event is never notified.
-        assert!(due(&list, &[10], at(14, 1), &BTreeMap::new()).iter().all(|d| d.event.id != "a"));
+        assert!(
+            due(&list, &[10], at(14, 1), &BTreeMap::new())
+                .iter()
+                .all(|d| d.event.id != "a")
+        );
     }
 
     #[test]
@@ -239,7 +304,13 @@ mod tests {
         let refreshed = merge_refresh(cached, vec![ev("hey:b", 14, 5)], &["icloud".to_string()]);
         let mut got: Vec<_> = refreshed.iter().map(|u| (u.id.as_str(), u.start)).collect();
         got.sort();
-        assert_eq!(got, vec![("hey:b", ev("hey:b", 14, 5).start), ("icloud:a", ev("icloud:a", 14, 0).start)]);
+        assert_eq!(
+            got,
+            vec![
+                ("hey:b", ev("hey:b", 14, 5).start),
+                ("icloud:a", ev("icloud:a", 14, 0).start)
+            ]
+        );
         // The send failed, so nothing was marked: the next minute it's due again.
         let sent = BTreeMap::new();
         let at = |m| Utc.with_ymd_and_hms(2026, 10, 9, 13, m, 0).unwrap();

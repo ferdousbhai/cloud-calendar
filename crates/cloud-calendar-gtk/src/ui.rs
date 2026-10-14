@@ -66,7 +66,12 @@ impl Ui {
         theme::apply(&palette);
         theme::watch(|p| theme::apply(&p));
 
-        let window = gtk::ApplicationWindow::builder().application(app).title("Cloud Calendar").default_width(1200).default_height(760).build();
+        let window = gtk::ApplicationWindow::builder()
+            .application(app)
+            .title("Cloud Calendar")
+            .default_width(1200)
+            .default_height(760)
+            .build();
         window.add_css_class("cloud-calendar");
 
         let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -85,7 +90,18 @@ impl Ui {
         let accounts = gtk::Button::with_label("Accounts");
         let add = gtk::Button::with_label("+ New event");
         add.add_css_class("suggested");
-        for w in [brand.upcast_ref::<gtk::Widget>(), prev.upcast_ref(), today.upcast_ref(), next.upcast_ref(), period.upcast_ref(), spacer.upcast_ref(), agenda.upcast_ref(), reload.upcast_ref(), accounts.upcast_ref(), add.upcast_ref()] {
+        for w in [
+            brand.upcast_ref::<gtk::Widget>(),
+            prev.upcast_ref(),
+            today.upcast_ref(),
+            next.upcast_ref(),
+            period.upcast_ref(),
+            spacer.upcast_ref(),
+            agenda.upcast_ref(),
+            reload.upcast_ref(),
+            accounts.upcast_ref(),
+            add.upcast_ref(),
+        ] {
             toolbar.append(w);
         }
         prev.set_tooltip_text(Some("Previous (h)"));
@@ -113,7 +129,11 @@ impl Ui {
             warning,
             content,
             agenda,
-            state: RefCell::new(State { anchor: Local::now().date_naive(), agenda: false, generation: 0 }),
+            state: RefCell::new(State {
+                anchor: Local::now().date_naive(),
+                agenda: false,
+                generation: 0,
+            }),
             calendars: RefCell::new(None),
             setup_error: RefCell::new(None),
             writable: RefCell::new(Vec::new()),
@@ -122,35 +142,69 @@ impl Ui {
             on_writable: RefCell::new(None),
         });
 
-        prev.connect_clicked(glib::clone!(#[weak] ui, move |_| ui.shift(-1)));
-        next.connect_clicked(glib::clone!(#[weak] ui, move |_| ui.shift(1)));
-        today.connect_clicked(glib::clone!(#[weak] ui, move |_| ui.go_today()));
-        reload.connect_clicked(glib::clone!(#[weak] ui, move |_| ui.reload()));
-        add.connect_clicked(glib::clone!(#[weak] ui, move |_| ui.new_event(None)));
-        ui.agenda.connect_toggled(glib::clone!(#[weak] ui, move |b| {
-            ui.state.borrow_mut().agenda = b.is_active();
-            ui.reload();
-        }));
+        prev.connect_clicked(glib::clone!(
+            #[weak]
+            ui,
+            move |_| ui.shift(-1)
+        ));
+        next.connect_clicked(glib::clone!(
+            #[weak]
+            ui,
+            move |_| ui.shift(1)
+        ));
+        today.connect_clicked(glib::clone!(
+            #[weak]
+            ui,
+            move |_| ui.go_today()
+        ));
+        reload.connect_clicked(glib::clone!(
+            #[weak]
+            ui,
+            move |_| ui.reload()
+        ));
+        add.connect_clicked(glib::clone!(
+            #[weak]
+            ui,
+            move |_| ui.new_event(None)
+        ));
+        ui.agenda.connect_toggled(glib::clone!(
+            #[weak]
+            ui,
+            move |b| {
+                ui.state.borrow_mut().agenda = b.is_active();
+                ui.reload();
+            }
+        ));
 
         let keys = gtk::EventControllerKey::new();
-        keys.connect_key_pressed(glib::clone!(#[weak] ui, #[upgrade_or] glib::Propagation::Proceed, move |_, key, _, mods| {
-            if mods.intersects(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK) {
-                return glib::Propagation::Proceed;
+        keys.connect_key_pressed(glib::clone!(
+            #[weak]
+            ui,
+            #[upgrade_or]
+            glib::Propagation::Proceed,
+            move |_, key, _, mods| {
+                if mods.intersects(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK) {
+                    return glib::Propagation::Proceed;
+                }
+                match key {
+                    gdk::Key::h | gdk::Key::Left => ui.shift(-1),
+                    gdk::Key::l | gdk::Key::Right => ui.shift(1),
+                    gdk::Key::t => ui.go_today(),
+                    gdk::Key::a => ui.agenda.set_active(!ui.agenda.is_active()),
+                    gdk::Key::n => ui.new_event(None),
+                    gdk::Key::r => ui.reload(),
+                    _ => return glib::Propagation::Proceed,
+                }
+                glib::Propagation::Stop
             }
-            match key {
-                gdk::Key::h | gdk::Key::Left => ui.shift(-1),
-                gdk::Key::l | gdk::Key::Right => ui.shift(1),
-                gdk::Key::t => ui.go_today(),
-                gdk::Key::a => ui.agenda.set_active(!ui.agenda.is_active()),
-                gdk::Key::n => ui.new_event(None),
-                gdk::Key::r => ui.reload(),
-                _ => return glib::Propagation::Proceed,
-            }
-            glib::Propagation::Stop
-        }));
+        ));
         ui.window.add_controller(keys);
 
-        accounts.connect_clicked(glib::clone!(#[weak] ui, move |_| crate::accounts::open(&ui)));
+        accounts.connect_clicked(glib::clone!(
+            #[weak]
+            ui,
+            move |_| crate::accounts::open(&ui)
+        ));
         ui.accounts_changed();
         ui
     }
@@ -178,7 +232,10 @@ impl Ui {
             let mut s = self.state.borrow_mut();
             let days = if s.agenda { i64::from(AGENDA_DAYS) } else { 7 };
             // Stays within the years every calendar here can hold.
-            if let Some(a) = chrono::Duration::try_days(by * days).and_then(|d| s.anchor.checked_add_signed(d)).and_then(|a| api::time::bounded(a, "").ok()) {
+            if let Some(a) = chrono::Duration::try_days(by * days)
+                .and_then(|d| s.anchor.checked_add_signed(d))
+                .and_then(|a| api::time::bounded(a, "").ok())
+            {
                 s.anchor = a;
             }
         }
@@ -195,7 +252,11 @@ impl Ui {
             let day = day.unwrap_or_else(|| {
                 let today = Local::now().date_naive();
                 let s = self.state.borrow();
-                if s.agenda || monday(s.anchor) == monday(today) { today.max(s.anchor) } else { monday(s.anchor) }
+                if s.agenda || monday(s.anchor) == monday(today) {
+                    today.max(s.anchor)
+                } else {
+                    monday(s.anchor)
+                }
             });
             editor::open(self, None, day);
         }
@@ -203,17 +264,25 @@ impl Ui {
 
     fn range(&self) -> api::Result<Range> {
         let s = self.state.borrow();
-        if s.agenda { Range::days(s.anchor, AGENDA_DAYS) } else { Range::days(monday(s.anchor), 7) }
+        if s.agenda {
+            Range::days(s.anchor, AGENDA_DAYS)
+        } else {
+            Range::days(monday(s.anchor), 7)
+        }
     }
 
     /// Reads the calendars you can add to again; an open editor's list follows.
     pub fn load_calendars(self: &Rc<Self>) {
-        let Some(cals) = self.calendars.borrow().clone() else { return };
+        let Some(cals) = self.calendars.borrow().clone() else {
+            return;
+        };
         let generation = self.calendars_generation.get() + 1;
         self.calendars_generation.set(generation);
         let ui = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
-            let Ok(listing) = gio::spawn_blocking(move || cals.calendars()).await else { return };
+            let Ok(listing) = gio::spawn_blocking(move || cals.calendars()).await else {
+                return;
+            };
             let Some(ui) = ui.upgrade() else { return };
             if ui.calendars_generation.get() != generation {
                 return;
@@ -245,7 +314,11 @@ impl Ui {
             format!("{} – {}", anchor.format("%-d %b"), last.format("%-d %b %Y"))
         } else {
             let m = monday(anchor);
-            format!("{} – {}", m.format("%-d %b"), (m + chrono::Days::new(6)).format("%-d %b %Y"))
+            format!(
+                "{} – {}",
+                m.format("%-d %b"),
+                (m + chrono::Days::new(6)).format("%-d %b %Y")
+            )
         });
         let Some(cals) = self.calendars.borrow().clone() else {
             let text = label(self.setup_error.borrow().as_deref().unwrap_or(""), "setup");
@@ -272,7 +345,11 @@ impl Ui {
             let warnings: Vec<String> = listing.warnings.iter().map(|w| w.message.clone()).collect();
             ui.warning.set_text(&warnings.join("\n"));
             ui.warning.set_visible(!warnings.is_empty());
-            if agenda { ui.show_agenda(&listing.items, &range) } else { ui.show_week(&listing.items) }
+            if agenda {
+                ui.show_agenda(&listing.items, &range)
+            } else {
+                ui.show_week(&listing.items)
+            }
         });
     }
 
@@ -280,9 +357,17 @@ impl Ui {
         let b = gtk::Button::new();
         b.add_css_class("event");
         let body = gtk::Box::new(gtk::Orientation::Vertical, 1);
-        let dot = e.color.as_deref().filter(|c| c.starts_with('#') && c.len() <= 9).unwrap_or("#888888");
+        let dot = e
+            .color
+            .as_deref()
+            .filter(|c| c.starts_with('#') && c.len() <= 9)
+            .unwrap_or("#888888");
         let title = gtk::Label::new(None);
-        title.set_markup(&format!("<span foreground=\"{dot}\">●</span> {}{}", glib::markup_escape_text(&e.title), if e.recurring { " ↻" } else { "" }));
+        title.set_markup(&format!(
+            "<span foreground=\"{dot}\">●</span> {}{}",
+            glib::markup_escape_text(&e.title),
+            if e.recurring { " ↻" } else { "" }
+        ));
         title.add_css_class("title");
         title.set_xalign(0.0);
         title.set_wrap(true);
@@ -290,7 +375,11 @@ impl Ui {
         body.append(&title);
         let mut when = if e.all_day {
             let last = e.end.local_date() - chrono::Days::new(1);
-            if last > e.start.local_date() { format!("all day, until {}", last.format("%a %-d")) } else { "all day".into() }
+            if last > e.start.local_date() {
+                format!("all day, until {}", last.format("%a %-d"))
+            } else {
+                "all day".into()
+            }
         } else {
             format!("{}–{}", clock(&e.start), clock(&e.end))
         };
@@ -304,7 +393,11 @@ impl Ui {
         b.set_child(Some(&body));
         b.set_tooltip_text(Some(&format!("{} · {} ({})", e.title, e.calendar, e.account)));
         let event = e.clone();
-        b.connect_clicked(glib::clone!(#[weak(rename_to = ui)] self, move |_| editor::open(&ui, Some(event.clone()), event.start.local_date())));
+        b.connect_clicked(glib::clone!(
+            #[weak(rename_to = ui)]
+            self,
+            move |_| editor::open(&ui, Some(event.clone()), event.start.local_date())
+        ));
         b
     }
 
@@ -324,7 +417,11 @@ impl Ui {
             head.add_css_class("flat");
             head.add_css_class("day-head");
             head.set_tooltip_text(Some("New event on this day"));
-            head.connect_clicked(glib::clone!(#[weak(rename_to = ui)] self, move |_| ui.new_event(Some(day))));
+            head.connect_clicked(glib::clone!(
+                #[weak(rename_to = ui)]
+                self,
+                move |_| ui.new_event(Some(day))
+            ));
             col.append(&head);
             let range = Range::day(day);
             for e in events.iter().filter(|e| range.overlaps(&e.start, &e.end)) {
@@ -341,7 +438,9 @@ impl Ui {
         let first = range.start.with_timezone(&Local).date_naive();
         let mut any = false;
         for i in 0..u64::from(AGENDA_DAYS) {
-            let Some(day) = first.checked_add_days(chrono::Days::new(i)) else { break };
+            let Some(day) = first.checked_add_days(chrono::Days::new(i)) else {
+                break;
+            };
             let day_range = Range::day(day);
             let todays: Vec<&Event> = events.iter().filter(|e| day_range.overlaps(&e.start, &e.end)).collect();
             if todays.is_empty() {

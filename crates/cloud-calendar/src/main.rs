@@ -48,7 +48,13 @@ pub struct Out {
 impl Out {
     fn new(data: Value, summary: impl Into<String>) -> Self {
         let summary = summary.into();
-        Self { data, human: summary.clone(), summary, ids: Vec::new(), warnings: Vec::new() }
+        Self {
+            data,
+            human: summary.clone(),
+            summary,
+            ids: Vec::new(),
+            warnings: Vec::new(),
+        }
     }
 }
 
@@ -93,7 +99,11 @@ fn main() {
                     }
                     writeln!(stdout, "{}", out.human.trim_end())
                 }
-                Mode::Json => writeln!(stdout, "{}", json!({ "ok": true, "data": out.data, "summary": out.summary, "meta": { "warnings": out.warnings } })),
+                Mode::Json => writeln!(
+                    stdout,
+                    "{}",
+                    json!({ "ok": true, "data": out.data, "summary": out.summary, "meta": { "warnings": out.warnings } })
+                ),
                 Mode::Quiet => writeln!(stdout, "{}", out.data),
                 Mode::Ids => out.ids.iter().try_for_each(|i| writeln!(stdout, "{i}")),
                 Mode::Count => writeln!(stdout, "{}", out.data.as_array().map(Vec::len).unwrap_or(out.ids.len())),
@@ -108,7 +118,10 @@ fn main() {
             if mode == Mode::Human {
                 eprintln!("error: {}", e.message);
             } else {
-                println!("{}", json!({ "ok": false, "error": { "code": e.kind.code(), "message": e.message } }));
+                println!(
+                    "{}",
+                    json!({ "ok": false, "error": { "code": e.kind.code(), "message": e.message } })
+                );
             }
             std::process::exit(exit_code(e.kind));
         }
@@ -127,7 +140,10 @@ fn load() -> api::Result<(api::Config, Calendars)> {
 
 fn need_accounts(c: &Calendars) -> api::Result<()> {
     if c.is_empty() && c.broken.is_empty() {
-        return Err(Error::new(ErrorKind::Config, "no calendar accounts linked yet; add one with `cloud-calendar account add icloud|google|hey`"));
+        return Err(Error::new(
+            ErrorKind::Config,
+            "no calendar accounts linked yet; add one with `cloud-calendar account add icloud|google|hey`",
+        ));
     }
     Ok(())
 }
@@ -140,7 +156,10 @@ fn run(command: Command) -> api::Result<Out> {
             let (_, c) = load()?;
             need_accounts(&c)?;
             let l = c.calendars();
-            let mut out = Out::new(serde_json::to_value(&l.items).unwrap_or_default(), format!("{} calendars", l.items.len()));
+            let mut out = Out::new(
+                serde_json::to_value(&l.items).unwrap_or_default(),
+                format!("{} calendars", l.items.len()),
+            );
             out.human = render::calendars(&l.items);
             out.ids = l.items.iter().map(|c| c.id.clone()).collect();
             out.warnings = l.warnings;
@@ -160,7 +179,9 @@ fn run(command: Command) -> api::Result<Out> {
                 None => today(),
             };
             let monday = day
-                .checked_sub_days(chrono::Days::new(u64::from(chrono::Datelike::weekday(&day).num_days_from_monday())))
+                .checked_sub_days(chrono::Days::new(u64::from(
+                    chrono::Datelike::weekday(&day).num_days_from_monday(),
+                )))
                 .ok_or_else(|| Error::bad_request(format!("the week of {day} is out of range")))?;
             agenda(Range::days(monday, 7)?, format!("the week of {monday}"))
         }
@@ -169,7 +190,10 @@ fn run(command: Command) -> api::Result<Out> {
         Command::Notify { refresh } => {
             let (config, c) = load()?;
             let report = api::notify::run(&c, &config.notify_minutes(), chrono::Utc::now(), refresh);
-            let mut out = Out::new(serde_json::to_value(&report).unwrap_or_default(), format!("{} notifications sent", report.sent.len()));
+            let mut out = Out::new(
+                serde_json::to_value(&report).unwrap_or_default(),
+                format!("{} notifications sent", report.sent.len()),
+            );
             out.ids = report.sent.iter().map(|s| s.id.clone()).collect();
             out.warnings = report.warnings;
             Ok(out)
@@ -181,7 +205,10 @@ fn agenda(range: Range, what: String) -> api::Result<Out> {
     let (_, c) = load()?;
     need_accounts(&c)?;
     let l = c.events(&range);
-    let mut out = Out::new(serde_json::to_value(&l.items).unwrap_or_default(), format!("{} events in {what}", l.items.len()));
+    let mut out = Out::new(
+        serde_json::to_value(&l.items).unwrap_or_default(),
+        format!("{} events in {what}", l.items.len()),
+    );
     out.human = render::agenda(&l.items, &range);
     out.ids = l.items.iter().map(|e| e.id.clone()).collect();
     out.warnings = l.warnings;
@@ -198,25 +225,49 @@ fn status() -> api::Result<Out> {
         "accounts": statuses,
         "broken": c.broken,
     });
-    let mut out = Out::new(data, format!("{} accounts, {} working", statuses.len(), statuses.iter().filter(|s| s.ok).count()));
+    let mut out = Out::new(
+        data,
+        format!(
+            "{} accounts, {} working",
+            statuses.len(),
+            statuses.iter().filter(|s| s.ok).count()
+        ),
+    );
     out.human = format!("config: {}\n{}", path.display(), render::accounts(&statuses, &c.broken));
     Ok(out)
 }
 
 fn skill(command: Option<SkillCommand>) -> api::Result<Out> {
-    let home = agent_skill::home().ok_or_else(|| Error::new(ErrorKind::Config, "no home directory to install the skill into"))?;
+    let home = agent_skill::home()
+        .ok_or_else(|| Error::new(ErrorKind::Config, "no home directory to install the skill into"))?;
     let (result, done, summary) = match command {
-        Some(SkillCommand::Remove) => (agent_skill::remove(&home, &SKILL), "Removed", "Removed the cloud-calendar skill"),
-        _ => (agent_skill::install(&home, &SKILL), "Installed", "Installed the cloud-calendar skill"),
+        Some(SkillCommand::Remove) => (
+            agent_skill::remove(&home, &SKILL),
+            "Removed",
+            "Removed the cloud-calendar skill",
+        ),
+        _ => (
+            agent_skill::install(&home, &SKILL),
+            "Installed",
+            "Installed the cloud-calendar skill",
+        ),
     };
     let o = result.map_err(|e| {
-        let kind = if e.kind() == std::io::ErrorKind::AlreadyExists { ErrorKind::BadRequest } else { ErrorKind::Config };
+        let kind = if e.kind() == std::io::ErrorKind::AlreadyExists {
+            ErrorKind::BadRequest
+        } else {
+            ErrorKind::Config
+        };
         Error::new(kind, e.to_string())
     })?;
     let mut out = Out::new(json!({ "paths": o.paths, "notices": o.notices }), summary);
     let mut lines: Vec<String> = o.paths.iter().map(|p| format!("{done} {}", p.display())).collect();
     lines.extend(o.notices);
-    out.human = if lines.is_empty() { "Nothing to do.".into() } else { lines.join("\n") };
+    out.human = if lines.is_empty() {
+        "Nothing to do.".into()
+    } else {
+        lines.join("\n")
+    };
     Ok(out)
 }
 
@@ -234,14 +285,25 @@ fn account(a: AccountCommand) -> api::Result<Out> {
             let link = match args.provider.as_str() {
                 "icloud" => api::accounts::Link::ICloud,
                 "google" => api::accounts::Link::Google,
-                "hey" => api::accounts::Link::Hey { account: args.hey_account.clone() },
+                "hey" => api::accounts::Link::Hey {
+                    account: args.hey_account.clone(),
+                },
                 other => {
-                    let known: Vec<_> = provider::KNOWN_PROVIDERS.iter().map(|(p, d)| format!("{p} ({d})")).collect();
-                    return Err(Error::bad_request(format!("unknown provider \"{other}\"; one of: {}", known.join(", "))));
+                    let known: Vec<_> = provider::KNOWN_PROVIDERS
+                        .iter()
+                        .map(|(p, d)| format!("{p} ({d})"))
+                        .collect();
+                    return Err(Error::bad_request(format!(
+                        "unknown provider \"{other}\"; one of: {}",
+                        known.join(", ")
+                    )));
                 }
             };
             let (name, note) = api::accounts::add(args.name.as_deref(), link)?;
-            Ok(Out::new(json!({ "name": name, "config": config::path() }), format!("linked {name}: {note}")))
+            Ok(Out::new(
+                json!({ "name": name, "config": config::path() }),
+                format!("linked {name}: {note}"),
+            ))
         }
         AccountCommand::Login { name } => {
             let note = api::accounts::login(&name)?;
@@ -249,7 +311,9 @@ fn account(a: AccountCommand) -> api::Result<Out> {
         }
         AccountCommand::Remove { name, yes } => {
             if !yes {
-                return Err(Error::bad_request(format!("removing {name} forgets what Cloud Calendar kept for it; run again with --yes")));
+                return Err(Error::bad_request(format!(
+                    "removing {name} forgets what Cloud Calendar kept for it; run again with --yes"
+                )));
             }
             let note = api::accounts::remove(&name)?;
             Ok(Out::new(json!({ "name": name }), note))
@@ -267,46 +331,91 @@ fn event(e: EventCommand) -> api::Result<Out> {
             let end = match (&a.end, &a.length) {
                 (Some(e), _) => api::time::parse_time(e, start.local_date())?,
                 (None, Some(l)) => api::time::add_length(&start, api::time::parse_length(l)?)?,
-                (None, None) => api::time::add_length(&start, chrono::Duration::hours(if start.is_date() { 24 } else { 1 }))?,
+                (None, None) => {
+                    api::time::add_length(&start, chrono::Duration::hours(if start.is_date() { 24 } else { 1 }))?
+                }
             };
             api::check_span(&start, &end)?;
-            let id = c.create(&NewEvent { calendar_id: a.calendar, title: a.title.clone(), start, end, location: a.location, notes: a.notes })?;
+            let id = c.create(&NewEvent {
+                calendar_id: a.calendar,
+                title: a.title.clone(),
+                start,
+                end,
+                location: a.location,
+                notes: a.notes,
+            })?;
             let mut out = Out::new(json!({ "id": id }), format!("added \"{}\" ({start} – {end})", a.title));
             out.ids = vec![id];
             Ok(out)
         }
         EventCommand::Edit(a) => {
-            let start = a.start.as_deref().map(|s| api::time::parse_time(s, today)).transpose()?;
-            let end = a.end.as_deref().map(|s| api::time::parse_time(s, start.map(|s| s.local_date()).unwrap_or(today))).transpose()?;
-            let change = EventChange { title: a.title, start, end, location: a.location, notes: a.notes };
+            let start = a
+                .start
+                .as_deref()
+                .map(|s| api::time::parse_time(s, today))
+                .transpose()?;
+            let end = a
+                .end
+                .as_deref()
+                .map(|s| api::time::parse_time(s, start.map(|s| s.local_date()).unwrap_or(today)))
+                .transpose()?;
+            let change = EventChange {
+                title: a.title,
+                start,
+                end,
+                location: a.location,
+                notes: a.notes,
+            };
             if change.is_empty() {
-                return Err(Error::bad_request("nothing to change: give --title, --start, --end, --location or --notes"));
+                return Err(Error::bad_request(
+                    "nothing to change: give --title, --start, --end, --location or --notes",
+                ));
             }
             let id = c.update(&a.id, &change)?;
             let caveat = c.edit_caveat(&a.id);
-            let summary = if id == a.id { format!("changed {id}") } else { format!("changed {} (now {id})", a.id) };
+            let summary = if id == a.id {
+                format!("changed {id}")
+            } else {
+                format!("changed {} (now {id})", a.id)
+            };
             let mut out = Out::new(json!({ "id": id }), summary);
             if let Some(message) = caveat {
                 let account = a.id.split_once(':').map(|(n, _)| n).unwrap_or_default().to_string();
-                out.warnings.push(api::AccountWarning { account, code: "edit_side_effects".into(), message });
+                out.warnings.push(api::AccountWarning {
+                    account,
+                    code: "edit_side_effects".into(),
+                    message,
+                });
             }
             out.ids = vec![id];
             Ok(out)
         }
         EventCommand::Delete { id, yes } => {
-            let series = provider::split_occurrence(id.split_once(':').map(|(_, l)| l).unwrap_or("")).1.is_some();
+            let series = provider::split_occurrence(id.split_once(':').map(|(_, l)| l).unwrap_or(""))
+                .1
+                .is_some();
             if series {
                 let (support, label) = c.series_support(&id)?;
                 if !support.delete {
-                    return Err(Error::bad_request(format!("{id} is a repeating {label} event, which Cloud Calendar can't delete; delete it in {label}")));
+                    return Err(Error::bad_request(format!(
+                        "{id} is a repeating {label} event, which Cloud Calendar can't delete; delete it in {label}"
+                    )));
                 }
             }
             if !yes {
-                let what = if series { "every occurrence of this repeating event" } else { "this event" };
+                let what = if series {
+                    "every occurrence of this repeating event"
+                } else {
+                    "this event"
+                };
                 return Err(Error::bad_request(format!("this deletes {what}; run again with --yes")));
             }
             c.delete(&id)?;
-            let summary = if series { format!("deleted the series {id} belongs to") } else { format!("deleted {id}") };
+            let summary = if series {
+                format!("deleted the series {id} belongs to")
+            } else {
+                format!("deleted {id}")
+            };
             let mut out = Out::new(json!({ "id": id, "series": series }), summary);
             out.ids = vec![id];
             Ok(out)

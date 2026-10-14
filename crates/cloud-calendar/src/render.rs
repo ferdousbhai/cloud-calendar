@@ -14,7 +14,12 @@ pub fn calendars(list: &[Calendar]) -> String {
             account = &c.account;
             out.push_str(&format!("{account}\n"));
         }
-        out.push_str(&format!("  {}{}  {}\n", c.name, if c.writable { "" } else { " (read-only)" }, c.id));
+        out.push_str(&format!(
+            "  {}{}  {}\n",
+            c.name,
+            if c.writable { "" } else { " (read-only)" },
+            c.id
+        ));
     }
     out
 }
@@ -25,7 +30,13 @@ pub fn accounts(list: &[AccountStatus], broken: &[AccountWarning]) -> String {
     }
     let mut out = String::new();
     for s in list {
-        out.push_str(&format!("{} {:<10} {:<7} {}\n", if s.ok { "✓" } else { "✗" }, s.name, s.label, s.detail));
+        out.push_str(&format!(
+            "{} {:<10} {:<7} {}\n",
+            if s.ok { "✓" } else { "✗" },
+            s.name,
+            s.label,
+            s.detail
+        ));
     }
     for b in broken {
         out.push_str(&format!("✗ {:<10} {}\n", b.account, b.message));
@@ -43,7 +54,9 @@ fn clock(t: &Time) -> String {
 /// Events grouped by local day; an event spanning days shows on each.
 pub fn agenda(events: &[Event], range: &Range) -> String {
     let first = range.start.with_timezone(&Local).date_naive();
-    let last = (range.end - chrono::Duration::seconds(1)).with_timezone(&Local).date_naive();
+    let last = (range.end - chrono::Duration::seconds(1))
+        .with_timezone(&Local)
+        .date_naive();
     let mut out = String::new();
     let mut day = first;
     while day <= last {
@@ -52,7 +65,11 @@ pub fn agenda(events: &[Event], range: &Range) -> String {
         if !todays.is_empty() {
             out.push_str(&format!("{} {} {}\n", day.weekday(), day.day(), day.format("%b")));
             for e in todays {
-                let when = if e.all_day { "all day".to_string() } else { format!("{}–{}", clock(&e.start), clock(&e.end)) };
+                let when = if e.all_day {
+                    "all day".to_string()
+                } else {
+                    format!("{}–{}", clock(&e.start), clock(&e.end))
+                };
                 let mut line = format!("  {when:<11} {}", e.title);
                 if e.recurring {
                     line.push_str(" ↻");

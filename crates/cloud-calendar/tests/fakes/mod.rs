@@ -40,8 +40,13 @@ impl Bus {
             .spawn()
             .expect("dbus-daemon (the dbus package) runs the tests' private bus");
         let mut line = String::new();
-        BufReader::new(daemon.stdout.take().unwrap()).read_line(&mut line).unwrap();
-        Bus { address: line.trim().to_string(), daemon }
+        BufReader::new(daemon.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        Bus {
+            address: line.trim().to_string(),
+            daemon,
+        }
     }
 }
 
@@ -86,15 +91,27 @@ impl FakeSession {
     }
     #[zbus(property, name = "AppleId")]
     fn apple_id(&self) -> String {
-        if self.0.lock().unwrap().signed_in { "me@icloud.com".into() } else { String::new() }
+        if self.0.lock().unwrap().signed_in {
+            "me@icloud.com".into()
+        } else {
+            String::new()
+        }
     }
     #[zbus(property, name = "FullName")]
     fn full_name(&self) -> String {
-        if self.0.lock().unwrap().signed_in { "Ada Lovelace".into() } else { String::new() }
+        if self.0.lock().unwrap().signed_in {
+            "Ada Lovelace".into()
+        } else {
+            String::new()
+        }
     }
     #[zbus(property, name = "Dsid")]
     fn dsid(&self) -> String {
-        if self.0.lock().unwrap().signed_in { "123".into() } else { String::new() }
+        if self.0.lock().unwrap().signed_in {
+            "123".into()
+        } else {
+            String::new()
+        }
     }
     #[zbus(property, name = "ExpiresAt")]
     fn expires_at(&self) -> u64 {
@@ -122,8 +139,16 @@ impl FakeSession {
         if st.keyring_unavailable {
             return Err(SessionError::KeyringUnavailable("the keyring is locked".into()));
         }
-        let params = HashMap::from([("clientBuildNumber".into(), "2618Build21".into()), ("clientMasteringNumber".into(), "2618Build21".into()), ("clientId".into(), "client-1".into())]);
-        Ok(("X-APPLE-WEBAUTH-TOKEN=t0k3n".into(), params, HashMap::from([("calendar".into(), st.calendar_url.clone())])))
+        let params = HashMap::from([
+            ("clientBuildNumber".into(), "2618Build21".into()),
+            ("clientMasteringNumber".into(), "2618Build21".into()),
+            ("clientId".into(), "client-1".into()),
+        ]);
+        Ok((
+            "X-APPLE-WEBAUTH-TOKEN=t0k3n".into(),
+            params,
+            HashMap::from([("calendar".into(), st.calendar_url.clone())]),
+        ))
     }
 
     #[zbus(name = "MergeCookies")]
@@ -161,7 +186,11 @@ pub struct Services {
 
 /// The fake icloud-session on the bus, or none (`installed` false: as if it isn't installed).
 pub fn serve(bus: &Bus, installed: bool, signed_in: bool, calendar_url: &str) -> Services {
-    let session = Arc::new(Mutex::new(SessionState { signed_in, calendar_url: calendar_url.into(), ..Default::default() }));
+    let session = Arc::new(Mutex::new(SessionState {
+        signed_in,
+        calendar_url: calendar_url.into(),
+        ..Default::default()
+    }));
     if !installed {
         return Services { session, _conn: None };
     }
@@ -173,7 +202,10 @@ pub fn serve(bus: &Bus, installed: bool, signed_in: bool, calendar_url: &str) ->
         .unwrap()
         .build()
         .unwrap();
-    Services { session, _conn: Some(icloud) }
+    Services {
+        session,
+        _conn: Some(icloud),
+    }
 }
 
 // ------------------------------------------------- icloud.com calendar
@@ -225,9 +257,36 @@ pub fn seed_events() -> HashMap<String, Value> {
         e
     };
     HashMap::from([
-        ("dentist".into(), ev("dentist", "Dentist", json!([20261014, 2026, 10, 14, 10, 0, 600]), json!([20261014, 2026, 10, 14, 11, 0, 780]), json!({"location": "Main St", "description": "bring forms"}))),
-        ("standup".into(), ev("standup", "Standup", json!([20261013, 2026, 10, 13, 9, 0, 540]), json!([20261013, 2026, 10, 13, 9, 15, 885]), json!({"recurrence": "standup*MME-RID"}))),
-        ("trip".into(), ev("trip", "Trip", json!([20261016, 2026, 10, 16, 0, 0, 0]), json!([20261018, 2026, 10, 18, 0, 0, 1440]), json!({"allDay": true, "tz": null}))),
+        (
+            "dentist".into(),
+            ev(
+                "dentist",
+                "Dentist",
+                json!([20261014, 2026, 10, 14, 10, 0, 600]),
+                json!([20261014, 2026, 10, 14, 11, 0, 780]),
+                json!({"location": "Main St", "description": "bring forms"}),
+            ),
+        ),
+        (
+            "standup".into(),
+            ev(
+                "standup",
+                "Standup",
+                json!([20261013, 2026, 10, 13, 9, 0, 540]),
+                json!([20261013, 2026, 10, 13, 9, 15, 885]),
+                json!({"recurrence": "standup*MME-RID"}),
+            ),
+        ),
+        (
+            "trip".into(),
+            ev(
+                "trip",
+                "Trip",
+                json!([20261016, 2026, 10, 16, 0, 0, 0]),
+                json!([20261018, 2026, 10, 18, 0, 0, 1440]),
+                json!({"allDay": true, "tz": null}),
+            ),
+        ),
     ])
 }
 
@@ -249,7 +308,10 @@ pub fn web() -> Web {
                         return;
                     }
                     let mut parts = line.split_whitespace();
-                    let (method, target) = (parts.next().unwrap_or("").to_string(), parts.next().unwrap_or("").to_string());
+                    let (method, target) = (
+                        parts.next().unwrap_or("").to_string(),
+                        parts.next().unwrap_or("").to_string(),
+                    );
                     let mut headers = HashMap::new();
                     loop {
                         let mut h = String::new();
@@ -266,8 +328,18 @@ pub fn web() -> Web {
                     let mut body = vec![0; len];
                     reader.read_exact(&mut body).unwrap();
                     let (path, q) = target.split_once('?').unwrap_or((&target, ""));
-                    let query = q.split('&').filter_map(|kv| kv.split_once('=')).map(|(k, v)| (k.to_string(), decode(v))).collect();
-                    let req = Req { method, path: path.to_string(), query, cookie: headers.get("cookie").cloned().unwrap_or_default(), body: serde_json::from_slice(&body).unwrap_or(Value::Null) };
+                    let query = q
+                        .split('&')
+                        .filter_map(|kv| kv.split_once('='))
+                        .map(|(k, v)| (k.to_string(), decode(v)))
+                        .collect();
+                    let req = Req {
+                        method,
+                        path: path.to_string(),
+                        query,
+                        cookie: headers.get("cookie").cloned().unwrap_or_default(),
+                        body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+                    };
                     log.lock().unwrap().push(req.clone());
                     let (status, reply) = handle(&req, &events);
                     let text = reply.to_string();
@@ -282,7 +354,10 @@ pub fn web() -> Web {
 }
 
 fn handle(req: &Req, events: &Mutex<HashMap<String, Value>>) -> (u16, Value) {
-    if !req.cookie.contains("X-APPLE-WEBAUTH-TOKEN=t0k3n") || req.query.get("dsid").map(String::as_str) != Some("123") || req.query.get("clientId").map(String::as_str) != Some("client-1") {
+    if !req.cookie.contains("X-APPLE-WEBAUTH-TOKEN=t0k3n")
+        || req.query.get("dsid").map(String::as_str) != Some("123")
+        || req.query.get("clientId").map(String::as_str) != Some("client-1")
+    {
         return (421, json!({}));
     }
     let mut events = events.lock().unwrap();
@@ -301,7 +376,10 @@ fn handle(req: &Req, events: &Mutex<HashMap<String, Value>>) -> (u16, Value) {
             (200, json!({"Event": list}))
         }
         ("GET", ["eventdetail", _, guid]) => match events.get(*guid) {
-            Some(e) => (200, json!({"Event": [e], "Alarm": [{"guid": format!("{guid}:a1"), "pGuid": guid}, {"guid": "other:a1", "pGuid": "other"}]})),
+            Some(e) => (
+                200,
+                json!({"Event": [e], "Alarm": [{"guid": format!("{guid}:a1"), "pGuid": guid}, {"guid": "other:a1", "pGuid": "other"}]}),
+            ),
             None => (404, json!({})),
         },
         ("POST", ["events", _, guid]) => {

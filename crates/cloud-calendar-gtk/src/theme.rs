@@ -154,11 +154,7 @@ pub fn apply(p: &Palette) {
         let mut cell = cell.borrow_mut();
         let provider = cell.get_or_insert_with(|| {
             let provider = gtk::CssProvider::new();
-            gtk::style_context_add_provider_for_display(
-                &display,
-                &provider,
-                gtk::STYLE_PROVIDER_PRIORITY_USER,
-            );
+            gtk::style_context_add_provider_for_display(&display, &provider, gtk::STYLE_PROVIDER_PRIORITY_USER);
             provider
         });
         provider.load_from_string(&css(p));
@@ -181,8 +177,8 @@ fn arm(on_change: Rc<dyn Fn(Palette)>, last: Rc<RefCell<Palette>>) {
     let dir = state_dir();
     let mut monitors = Vec::new();
     for path in [dir.clone(), dir.join("theme")] {
-        let Ok(monitor) = gio::File::for_path(&path)
-            .monitor_directory(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
+        let Ok(monitor) =
+            gio::File::for_path(&path).monitor_directory(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
         else {
             continue;
         };

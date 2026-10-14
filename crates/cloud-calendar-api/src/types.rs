@@ -38,13 +38,20 @@ impl Time {
 /// A date's first instant in the local time zone (the earliest one, across a DST change).
 pub fn local_midnight(d: NaiveDate) -> DateTime<Utc> {
     let naive = d.and_hms_opt(0, 0, 0).unwrap_or_default();
-    Local.from_local_datetime(&naive).earliest().map(|t| t.with_timezone(&Utc)).unwrap_or_else(|| naive.and_utc())
+    Local
+        .from_local_datetime(&naive)
+        .earliest()
+        .map(|t| t.with_timezone(&Utc))
+        .unwrap_or_else(|| naive.and_utc())
 }
 
 impl std::fmt::Display for Time {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Time::At(t) => f.write_str(&t.with_timezone(&Local).to_rfc3339_opts(chrono::SecondsFormat::Secs, false)),
+            Time::At(t) => f.write_str(
+                &t.with_timezone(&Local)
+                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
+            ),
             Time::Date(d) => write!(f, "{}", d.format("%Y-%m-%d")),
         }
     }
@@ -69,14 +76,20 @@ impl Range {
         let to = from
             .checked_add_days(chrono::Days::new(u64::from(days.max(1))))
             .ok_or_else(|| crate::Error::bad_request(format!("{days} days from {from} is out of range")))?;
-        Ok(Self { start: local_midnight(from), end: local_midnight(to) })
+        Ok(Self {
+            start: local_midnight(from),
+            end: local_midnight(to),
+        })
     }
 
     /// One local day, for sorting events into the days of a window already read. It can't fail:
     /// at the last date chrono holds, the day ends there.
     pub fn day(d: NaiveDate) -> Self {
         let next = d.checked_add_days(chrono::Days::new(1)).unwrap_or(NaiveDate::MAX);
-        Self { start: local_midnight(d), end: local_midnight(next) }
+        Self {
+            start: local_midnight(d),
+            end: local_midnight(next),
+        }
     }
 
     /// Whether an event from `start` to `end` overlaps the window.
@@ -160,10 +173,14 @@ impl EventChange {
 /// Checks an event's ends: both dates or both instants, and the end after the start.
 pub fn check_span(start: &Time, end: &Time) -> crate::Result<()> {
     if start.is_date() != end.is_date() {
-        return Err(crate::Error::bad_request("an event's start and end must both be dates (all-day) or both be times"));
+        return Err(crate::Error::bad_request(
+            "an event's start and end must both be dates (all-day) or both be times",
+        ));
     }
     if end <= start {
-        return Err(crate::Error::bad_request(format!("the end ({end}) must come after the start ({start})")));
+        return Err(crate::Error::bad_request(format!(
+            "the end ({end}) must come after the start ({start})"
+        )));
     }
     Ok(())
 }

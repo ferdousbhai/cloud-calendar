@@ -23,13 +23,19 @@ pub struct Listing<T> {
 
 impl<T> Default for Listing<T> {
     fn default() -> Self {
-        Self { items: Vec::new(), warnings: Vec::new() }
+        Self {
+            items: Vec::new(),
+            warnings: Vec::new(),
+        }
     }
 }
 
 impl Calendars {
     pub fn new(accounts: Vec<Arc<dyn Provider>>) -> Self {
-        Self { accounts, broken: Vec::new() }
+        Self {
+            accounts,
+            broken: Vec::new(),
+        }
     }
 
     pub fn from_config(config: &Config) -> Self {
@@ -49,24 +55,43 @@ impl Calendars {
 
     /// The account an ID belongs to.
     pub fn account_for(&self, id: &str) -> Result<&dyn Provider> {
-        self.accounts.iter().find(|p| p.owns(id)).map(|p| p.as_ref()).ok_or_else(|| {
-            let account = id.split(':').next().unwrap_or("");
-            Error::new(ErrorKind::NotFound, format!("no linked account \"{account}\" for {id} (see `cloud-calendar account list`)"))
-        })
+        self.accounts
+            .iter()
+            .find(|p| p.owns(id))
+            .map(|p| p.as_ref())
+            .ok_or_else(|| {
+                let account = id.split(':').next().unwrap_or("");
+                Error::new(
+                    ErrorKind::NotFound,
+                    format!("no linked account \"{account}\" for {id} (see `cloud-calendar account list`)"),
+                )
+            })
     }
 
     fn each<T: Send>(&self, f: impl Fn(&dyn Provider) -> Result<Vec<T>> + Sync) -> Listing<T> {
         let results: Vec<(String, Result<Vec<T>>)> = std::thread::scope(|s| {
-            let handles: Vec<_> = self.accounts.iter().map(|p| (p.name().to_string(), s.spawn(|| f(p.as_ref())))).collect();
+            let handles: Vec<_> = self
+                .accounts
+                .iter()
+                .map(|p| (p.name().to_string(), s.spawn(|| f(p.as_ref()))))
+                .collect();
             handles
                 .into_iter()
                 .map(|(name, h)| {
-                    let r = h.join().unwrap_or_else(|_| Err(Error::new(ErrorKind::AccountUnavailable, format!("{name}: failed unexpectedly"))));
+                    let r = h.join().unwrap_or_else(|_| {
+                        Err(Error::new(
+                            ErrorKind::AccountUnavailable,
+                            format!("{name}: failed unexpectedly"),
+                        ))
+                    });
                     (name, r)
                 })
                 .collect()
         });
-        let mut out = Listing { items: Vec::new(), warnings: self.broken.clone() };
+        let mut out = Listing {
+            items: Vec::new(),
+            warnings: self.broken.clone(),
+        };
         for (name, r) in results {
             match r {
                 Ok(items) => out.items.extend(items),
@@ -85,7 +110,9 @@ impl Calendars {
 
     pub fn calendars(&self) -> Listing<Calendar> {
         let mut l = self.each(|p| p.calendars());
-        l.items.sort_by(|a, b| (a.account.as_str(), a.name.to_lowercase()).cmp(&(b.account.as_str(), b.name.to_lowercase())));
+        l.items.sort_by(|a, b| {
+            (a.account.as_str(), a.name.to_lowercase()).cmp(&(b.account.as_str(), b.name.to_lowercase()))
+        });
         l
     }
 

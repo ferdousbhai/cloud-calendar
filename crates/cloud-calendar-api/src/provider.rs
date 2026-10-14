@@ -39,7 +39,11 @@ pub struct AccountWarning {
 
 impl AccountWarning {
     pub fn new(account: &str, e: &Error) -> Self {
-        Self { account: account.to_string(), code: e.kind.code().to_string(), message: e.message.clone() }
+        Self {
+            account: account.to_string(),
+            code: e.kind.code().to_string(),
+            message: e.message.clone(),
+        }
     }
 }
 
@@ -64,7 +68,10 @@ pub trait Provider: Send + Sync {
     fn status(&self) -> AccountStatus;
     /// Signs in again, for an account whose sign-in expired or was revoked. Blocks until done.
     fn sign_in(&self) -> Result<()> {
-        Err(Error::bad_request(format!("{} has no sign-in to run here", self.label())))
+        Err(Error::bad_request(format!(
+            "{} has no sign-in to run here",
+            self.label()
+        )))
     }
     fn calendars(&self) -> Result<Vec<Calendar>>;
     /// Events overlapping the range, repeating ones expanded into their occurrences.
@@ -77,7 +84,10 @@ pub trait Provider: Send + Sync {
     fn delete(&self, id: &str) -> Result<()>;
     /// What this provider can do to a repeating event here.
     fn series_support(&self) -> SeriesSupport {
-        SeriesSupport { edit: true, delete: true }
+        SeriesSupport {
+            edit: true,
+            delete: true,
+        }
     }
     /// What any edit does beyond the change asked for, said before and after one.
     fn edit_caveat(&self) -> Option<&'static str> {
@@ -87,7 +97,10 @@ pub trait Provider: Send + Sync {
 
 /// Providers cloud-calendar knows how to link, for `account add` and its help.
 pub const KNOWN_PROVIDERS: &[(&str, &str)] = &[
-    ("icloud", "iCloud Calendar, through the iCloud sign-in icloud-session shares with your other apps"),
+    (
+        "icloud",
+        "iCloud Calendar, through the iCloud sign-in icloud-session shares with your other apps",
+    ),
     ("google", "Google Calendar, through Google's Workspace CLI `gws`"),
     ("hey", "HEY Calendar, through the official `hey` CLI"),
 ];
@@ -100,25 +113,41 @@ pub fn open(name: &str, cfg: &AccountConfig) -> Result<Arc<dyn Provider>> {
         "hey" => Ok(Arc::new(crate::hey::Hey::new(name, cfg))),
         other => Err(Error::new(
             ErrorKind::Config,
-            format!("account {name}: unknown provider \"{other}\" (known: {})", KNOWN_PROVIDERS.iter().map(|(p, _)| *p).collect::<Vec<_>>().join(", ")),
+            format!(
+                "account {name}: unknown provider \"{other}\" (known: {})",
+                KNOWN_PROVIDERS.iter().map(|(p, _)| *p).collect::<Vec<_>>().join(", ")
+            ),
         )),
     }
 }
 
 /// Account names become ID prefixes, so they are short lowercase words.
 pub fn valid_name(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 32 && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    !name.is_empty()
+        && name.len() <= 32
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// The part of an ID after `<account>:`.
 pub(crate) fn local_id<'a>(account: &str, label: &str, id: &'a str) -> Result<&'a str> {
-    id.strip_prefix(account).and_then(|r| r.strip_prefix(':')).filter(|r| !r.is_empty()).ok_or_else(|| Error::bad_request(format!("{id} is not a {label} ID")))
+    id.strip_prefix(account)
+        .and_then(|r| r.strip_prefix(':'))
+        .filter(|r| !r.is_empty())
+        .ok_or_else(|| Error::bad_request(format!("{id} is not a {label} ID")))
 }
 
 /// `(base, occurrence day)` from a local ID that may end in `~<day>`.
 pub fn split_occurrence(local: &str) -> (&str, Option<&str>) {
     match local.rsplit_once('~') {
-        Some((base, day)) if !base.is_empty() && (day.len() == 8 || day.len() == 16) && day.chars().all(|c| c.is_ascii_alphanumeric()) => (base, Some(day)),
+        Some((base, day))
+            if !base.is_empty()
+                && (day.len() == 8 || day.len() == 16)
+                && day.chars().all(|c| c.is_ascii_alphanumeric()) =>
+        {
+            (base, Some(day))
+        }
         _ => (local, None),
     }
 }
@@ -161,7 +190,11 @@ pub(crate) fn changed_span(change: &EventChange, start: Time, end: Time) -> Resu
 
 /// How a command-line tool ended.
 pub(crate) enum Run {
-    Done { status: ExitStatus, stdout: Vec<u8>, stderr: String },
+    Done {
+        status: ExitStatus,
+        stdout: Vec<u8>,
+        stderr: String,
+    },
     Missing,
     TimedOut,
     Failed(std::io::Error),
@@ -169,7 +202,9 @@ pub(crate) enum Run {
 
 /// Runs a prepared command (stdout and stderr piped, stdin fed when given), killing it after `timeout`.
 pub(crate) fn run_command(cmd: &mut Command, stdin: Option<&str>, timeout: Duration) -> Run {
-    cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Run::Missing,
@@ -206,7 +241,9 @@ pub(crate) fn run_command(cmd: &mut Command, stdin: Option<&str>, timeout: Durat
         }
     };
     let stdout = out.join().unwrap_or_default();
-    let stderr = String::from_utf8_lossy(&err.join().unwrap_or_default()).trim().to_string();
+    let stderr = String::from_utf8_lossy(&err.join().unwrap_or_default())
+        .trim()
+        .to_string();
     Run::Done { status, stdout, stderr }
 }
 
@@ -218,20 +255,35 @@ mod tests {
     #[test]
     fn occurrence_ids() {
         assert_eq!(split_occurrence("123~20261009"), ("123", Some("20261009")));
-        assert_eq!(split_occurrence("/cal/a.ics~20261009T090000Z"), ("/cal/a.ics", Some("20261009T090000Z")));
-        assert_eq!(split_occurrence("a@group.calendar.google.com/ev1"), ("a@group.calendar.google.com/ev1", None));
+        assert_eq!(
+            split_occurrence("/cal/a.ics~20261009T090000Z"),
+            ("/cal/a.ics", Some("20261009T090000Z"))
+        );
+        assert_eq!(
+            split_occurrence("a@group.calendar.google.com/ev1"),
+            ("a@group.calendar.google.com/ev1", None)
+        );
         assert_eq!(split_occurrence("/home/~user/a.ics"), ("/home/~user/a.ics", None));
         let t = Time::At(Utc.with_ymd_and_hms(2026, 10, 9, 9, 0, 0).unwrap());
         assert_eq!(occurrence_suffix(&t), "~20261009T090000Z");
-        assert_eq!(occurrence_suffix(&Time::Date(NaiveDate::from_ymd_opt(2026, 10, 9).unwrap())), "~20261009");
+        assert_eq!(
+            occurrence_suffix(&Time::Date(NaiveDate::from_ymd_opt(2026, 10, 9).unwrap())),
+            "~20261009"
+        );
     }
 
     #[test]
     fn new_start_keeps_length() {
         let at = |h| Time::At(Utc.with_ymd_and_hms(2026, 10, 9, h, 0, 0).unwrap());
-        let change = EventChange { start: Some(at(14)), ..Default::default() };
+        let change = EventChange {
+            start: Some(at(14)),
+            ..Default::default()
+        };
         assert_eq!(changed_span(&change, at(9), at(10)).unwrap(), (at(14), at(15)));
-        let bad = EventChange { end: Some(at(8)), ..Default::default() };
+        let bad = EventChange {
+            end: Some(at(8)),
+            ..Default::default()
+        };
         assert!(changed_span(&bad, at(9), at(10)).is_err());
     }
 }

@@ -48,7 +48,8 @@ pub const CLIENT_SECRET_ENV: &str = "CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET";
 /// The program that opens the sign-in link (default: xdg-open).
 pub const BROWSER_ENV: &str = "CLOUD_CALENDAR_BROWSER";
 /// Events on your calendars, and the list of calendars; nothing else in your Google account.
-pub const SCOPES: &str = "https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+pub const SCOPES: &str =
+    "https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 pub const INSTALL_HINT: &str = "install Google's Workspace CLI: `npm install -g @googleworkspace/cli` (or a release binary from https://github.com/googleworkspace/cli/releases)";
 
 const TIMEOUT: Duration = Duration::from_secs(90);
@@ -74,9 +75,14 @@ fn nonblank(v: Option<String>) -> Option<String> {
 /// `start` / `end` of a Google event: `{dateTime}` or `{date}`.
 pub fn parse_when(v: &Value) -> Option<Time> {
     if let Some(dt) = v["dateTime"].as_str() {
-        return DateTime::parse_from_rfc3339(dt).ok().map(|t| Time::At(t.with_timezone(&Utc)));
+        return DateTime::parse_from_rfc3339(dt)
+            .ok()
+            .map(|t| Time::At(t.with_timezone(&Utc)));
     }
-    v["date"].as_str().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()).map(Time::Date)
+    v["date"]
+        .as_str()
+        .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+        .map(Time::Date)
 }
 
 pub fn when_json(t: &Time) -> Value {
@@ -107,20 +113,34 @@ pub fn gws_dir(name: &str) -> PathBuf {
 }
 
 fn sign_in_url(line: &str) -> Option<String> {
-    line.split_whitespace().find(|w| w.starts_with("https://accounts.google.com/")).map(str::to_string)
+    line.split_whitespace()
+        .find(|w| w.starts_with("https://accounts.google.com/"))
+        .map(str::to_string)
 }
 
 fn open_browser(url: &str) {
     let program = nonblank(std::env::var(BROWSER_ENV).ok()).unwrap_or_else(|| "xdg-open".into());
-    let _ = Command::new(program).arg(url).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    let _ = Command::new(program)
+        .arg(url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
 }
 
 impl Google {
     pub fn new(name: &str, _cfg: &AccountConfig) -> Self {
         let command = nonblank(std::env::var(COMMAND_ENV).ok()).unwrap_or_else(|| "gws".into());
         let env = |k| nonblank(std::env::var(k).ok());
-        let client = env(CLIENT_ID_ENV).zip(env(CLIENT_SECRET_ENV)).unwrap_or_else(|| (GOOGLE_CLIENT_ID.into(), GOOGLE_CLIENT_SECRET.into()));
-        Self { name: name.into(), command, dir: gws_dir(name), client }
+        let client = env(CLIENT_ID_ENV)
+            .zip(env(CLIENT_SECRET_ENV))
+            .unwrap_or_else(|| (GOOGLE_CLIENT_ID.into(), GOOGLE_CLIENT_SECRET.into()));
+        Self {
+            name: name.into(),
+            command,
+            dir: gws_dir(name),
+            client,
+        }
     }
 
     pub fn dir(&self) -> &Path {
@@ -136,21 +156,34 @@ impl Google {
     }
 
     fn missing(&self) -> Error {
-        self.fail(ErrorKind::AccountUnavailable, format!("Google's Workspace CLI isn't installed (no `{}` on PATH); {INSTALL_HINT}", self.command))
+        self.fail(
+            ErrorKind::AccountUnavailable,
+            format!(
+                "Google's Workspace CLI isn't installed (no `{}` on PATH); {INSTALL_HINT}",
+                self.command
+            ),
+        )
     }
 
     fn gws(&self) -> Command {
         let (id, secret) = &self.client;
         let mut cmd = Command::new(&self.command);
         // gws also reads a .env from its working directory.
-        cmd.current_dir(if self.dir.is_dir() { self.dir.clone() } else { std::env::temp_dir() })
-            .env("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", &self.dir)
-            .env("GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND", "file")
-            .env("GOOGLE_APPLICATION_CREDENTIALS", self.dir.join("no-application-default-credentials.json"))
-            .env_remove("GOOGLE_WORKSPACE_CLI_TOKEN")
-            .env_remove("GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE")
-            .env("GOOGLE_WORKSPACE_CLI_CLIENT_ID", id)
-            .env("GOOGLE_WORKSPACE_CLI_CLIENT_SECRET", secret);
+        cmd.current_dir(if self.dir.is_dir() {
+            self.dir.clone()
+        } else {
+            std::env::temp_dir()
+        })
+        .env("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", &self.dir)
+        .env("GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND", "file")
+        .env(
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            self.dir.join("no-application-default-credentials.json"),
+        )
+        .env_remove("GOOGLE_WORKSPACE_CLI_TOKEN")
+        .env_remove("GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE")
+        .env("GOOGLE_WORKSPACE_CLI_CLIENT_ID", id)
+        .env("GOOGLE_WORKSPACE_CLI_CLIENT_SECRET", secret);
         cmd
     }
 
@@ -158,9 +191,24 @@ impl Google {
     /// browser, and waits for Google to send the browser back.
     pub fn login(&self) -> Result<()> {
         let mut cmd = self.gws();
-        crate::config::private_dir(&self.dir).map_err(|e| self.fail(ErrorKind::AccountUnavailable, format!("could not create {}: {e}", self.dir.display())))?;
-        cmd.current_dir(&self.dir).args(["auth", "login", "--scopes", SCOPES]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        let mut child = cmd.spawn().map_err(|e| if e.kind() == std::io::ErrorKind::NotFound { self.missing() } else { self.fail(ErrorKind::AccountUnavailable, e.to_string()) })?;
+        crate::config::private_dir(&self.dir).map_err(|e| {
+            self.fail(
+                ErrorKind::AccountUnavailable,
+                format!("could not create {}: {e}", self.dir.display()),
+            )
+        })?;
+        cmd.current_dir(&self.dir)
+            .args(["auth", "login", "--scopes", SCOPES])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                self.missing()
+            } else {
+                self.fail(ErrorKind::AccountUnavailable, e.to_string())
+            }
+        })?;
         let opened = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let watch = |pipe: Box<dyn Read + Send>| {
             let opened = opened.clone();
@@ -189,7 +237,10 @@ impl Google {
                 Ok(None) => {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(self.fail(ErrorKind::AccountAuth, "the Google sign-in wasn't finished within 10 minutes"));
+                    return Err(self.fail(
+                        ErrorKind::AccountAuth,
+                        "the Google sign-in wasn't finished within 10 minutes",
+                    ));
                 }
                 Err(e) => return Err(self.fail(ErrorKind::AccountUnavailable, e.to_string())),
             }
@@ -197,8 +248,16 @@ impl Google {
         let _ = out.and_then(|h| h.join().ok());
         let stderr = err.and_then(|h| h.join().ok()).unwrap_or_default();
         if !status.success() || !self.signed_in() {
-            let last = stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").to_string();
-            return Err(self.fail(ErrorKind::AccountAuth, format!("the Google sign-in didn't finish ({status}) {last}")));
+            let last = stderr
+                .lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("")
+                .to_string();
+            return Err(self.fail(
+                ErrorKind::AccountAuth,
+                format!("the Google sign-in didn't finish ({status}) {last}"),
+            ));
         }
         Ok(())
     }
@@ -215,26 +274,46 @@ impl Google {
     /// `gws calendar <resource> <method> --params <params> [--json <body>]`.
     fn call(&self, resource: &str, method: &str, params: Value, body: Option<&Value>) -> Result<Value> {
         if !self.signed_in() {
-            return Err(self.fail(ErrorKind::AccountAuth, format!("not signed in; run `cloud-calendar account login {}`", self.name)));
+            return Err(self.fail(
+                ErrorKind::AccountAuth,
+                format!("not signed in; run `cloud-calendar account login {}`", self.name),
+            ));
         }
         let what = format!("{resource} {method}");
         let mut cmd = self.gws();
-        cmd.args(["calendar", resource, method]).arg("--params").arg(params.to_string());
+        cmd.args(["calendar", resource, method])
+            .arg("--params")
+            .arg(params.to_string());
         if let Some(b) = body {
             cmd.arg("--json").arg(b.to_string());
         }
         let (status, stdout, stderr) = match run_command(&mut cmd, None, TIMEOUT) {
             Run::Done { status, stdout, stderr } => (status, stdout, stderr),
             Run::Missing => return Err(self.missing()),
-            Run::TimedOut => return Err(self.fail(ErrorKind::AccountUnavailable, format!("`gws calendar {what}` took longer than {}s", TIMEOUT.as_secs()))),
-            Run::Failed(e) => return Err(self.fail(ErrorKind::AccountUnavailable, format!("could not run {}: {e}", self.command))),
+            Run::TimedOut => {
+                return Err(self.fail(
+                    ErrorKind::AccountUnavailable,
+                    format!("`gws calendar {what}` took longer than {}s", TIMEOUT.as_secs()),
+                ));
+            }
+            Run::Failed(e) => {
+                return Err(self.fail(
+                    ErrorKind::AccountUnavailable,
+                    format!("could not run {}: {e}", self.command),
+                ));
+            }
         };
         let parsed: std::result::Result<Value, _> = serde_json::from_slice(&stdout);
         if status.success() {
             if String::from_utf8_lossy(&stdout).trim().is_empty() {
                 return Ok(Value::Null);
             }
-            return parsed.map_err(|e| self.fail(ErrorKind::AccountUnavailable, format!("`gws calendar {what}` answered something that isn't JSON ({e})")));
+            return parsed.map_err(|e| {
+                self.fail(
+                    ErrorKind::AccountUnavailable,
+                    format!("`gws calendar {what}` answered something that isn't JSON ({e})"),
+                )
+            });
         }
         Err(self.gws_error(status.code(), &parsed.unwrap_or(Value::Null), &stderr, &what))
     }
@@ -245,7 +324,13 @@ impl Google {
         let err = &out["error"];
         let mut message = text(&err["message"]);
         if message.is_empty() {
-            message = stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string();
+            message = stderr
+                .lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("")
+                .trim()
+                .to_string();
         }
         if message.is_empty() {
             message = format!("`gws calendar {what}` failed");
@@ -253,14 +338,28 @@ impl Google {
         let message: String = message.lines().next().unwrap_or("").chars().take(300).collect();
         let again = format!("run `cloud-calendar account login {}` to sign in again", self.name);
         match (code, err["code"].as_i64().unwrap_or(0)) {
-            (Some(2), _) | (Some(1), 401) => self.fail(ErrorKind::AccountAuth, format!("the Google sign-in expired or was revoked ({message}); {again}")),
-            (Some(1), 403) if message.to_ascii_lowercase().contains("insufficient") => self.fail(ErrorKind::AccountAuth, format!("not allowed ({message}); {again}")),
+            (Some(2), _) | (Some(1), 401) => self.fail(
+                ErrorKind::AccountAuth,
+                format!("the Google sign-in expired or was revoked ({message}); {again}"),
+            ),
+            (Some(1), 403) if message.to_ascii_lowercase().contains("insufficient") => {
+                self.fail(ErrorKind::AccountAuth, format!("not allowed ({message}); {again}"))
+            }
             (Some(1), 403) => self.fail(ErrorKind::BadRequest, message),
             (Some(1), 404 | 410) => self.fail(ErrorKind::NotFound, message),
             (Some(1), 400) => self.fail(ErrorKind::BadRequest, message),
-            (Some(1), 429) => self.fail(ErrorKind::AccountUnavailable, format!("Google is rate limiting ({message}); try again shortly")),
-            (Some(4), _) => self.fail(ErrorKind::AccountUnavailable, format!("couldn't reach Google ({message})")),
-            (Some(3), _) => self.fail(ErrorKind::AccountUnavailable, format!("gws rejected `{what}` ({message}); is gws up to date?")),
+            (Some(1), 429) => self.fail(
+                ErrorKind::AccountUnavailable,
+                format!("Google is rate limiting ({message}); try again shortly"),
+            ),
+            (Some(4), _) => self.fail(
+                ErrorKind::AccountUnavailable,
+                format!("couldn't reach Google ({message})"),
+            ),
+            (Some(3), _) => self.fail(
+                ErrorKind::AccountUnavailable,
+                format!("gws rejected `{what}` ({message}); is gws up to date?"),
+            ),
             _ => self.fail(ErrorKind::AccountUnavailable, message),
         }
     }
@@ -320,12 +419,18 @@ impl Google {
                 if e["status"] == "cancelled" {
                     continue;
                 }
-                let (Some(start), Some(end)) = (parse_when(&e["start"]), parse_when(&e["end"])) else { continue };
+                let (Some(start), Some(end)) = (parse_when(&e["start"]), parse_when(&e["end"])) else {
+                    continue;
+                };
                 if !range.overlaps(&start, &end) {
                     continue;
                 }
                 let recurring = e["recurringEventId"].as_str().is_some_and(|r| !r.is_empty());
-                let suffix = if recurring { provider::occurrence_suffix(&start) } else { String::new() };
+                let suffix = if recurring {
+                    provider::occurrence_suffix(&start)
+                } else {
+                    String::new()
+                };
                 let title = text(&e["summary"]);
                 out.push(Event {
                     id: format!("{}:{cal_id}/{}{suffix}", self.name, text(&e["id"])),
@@ -354,7 +459,10 @@ impl Google {
     fn event_ref<'a>(&self, id: &'a str) -> Result<(&'a str, &'a str, bool)> {
         let local = provider::local_id(&self.name, "Google", id)?;
         let (base, occurrence) = provider::split_occurrence(local);
-        let (cal, ev) = base.rsplit_once('/').filter(|(c, e)| !c.is_empty() && !e.is_empty()).ok_or_else(|| self.fail(ErrorKind::NotFound, format!("{id} isn't a Google event ID")))?;
+        let (cal, ev) = base
+            .rsplit_once('/')
+            .filter(|(c, e)| !c.is_empty() && !e.is_empty())
+            .ok_or_else(|| self.fail(ErrorKind::NotFound, format!("{id} isn't a Google event ID")))?;
         Ok((cal, ev, occurrence.is_some()))
     }
 
@@ -381,7 +489,12 @@ impl Provider for Google {
     }
 
     fn status(&self) -> AccountStatus {
-        let mut s = AccountStatus { name: self.name.clone(), provider: "google".into(), label: "Google".into(), ..Default::default() };
+        let mut s = AccountStatus {
+            name: self.name.clone(),
+            provider: "google".into(),
+            label: "Google".into(),
+            ..Default::default()
+        };
         if !self.signed_in() {
             s.detail = format!("not signed in: run `cloud-calendar account login {}`", self.name);
             return s;
@@ -401,15 +514,32 @@ impl Provider for Google {
     }
 
     fn calendars(&self) -> Result<Vec<Calendar>> {
-        Ok(self.calendar_list()?.iter().filter_map(|c| self.to_calendar(c)).collect())
+        Ok(self
+            .calendar_list()?
+            .iter()
+            .filter_map(|c| self.to_calendar(c))
+            .collect())
     }
 
     fn events(&self, range: &Range) -> Result<Vec<Event>> {
         let list = self.calendar_list()?;
-        let cals: Vec<Calendar> = list.iter().filter(|c| c["selected"] == json!(true)).filter_map(|c| self.to_calendar(c)).collect();
+        let cals: Vec<Calendar> = list
+            .iter()
+            .filter(|c| c["selected"] == json!(true))
+            .filter_map(|c| self.to_calendar(c))
+            .collect();
         let results: Vec<Result<Vec<Event>>> = std::thread::scope(|s| {
-            let handles: Vec<_> = cals.iter().map(|c| s.spawn(move || self.calendar_events(c, range))).collect();
-            handles.into_iter().map(|h| h.join().unwrap_or_else(|_| Err(self.fail(ErrorKind::AccountUnavailable, "failed unexpectedly")))).collect()
+            let handles: Vec<_> = cals
+                .iter()
+                .map(|c| s.spawn(move || self.calendar_events(c, range)))
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| {
+                    h.join()
+                        .unwrap_or_else(|_| Err(self.fail(ErrorKind::AccountUnavailable, "failed unexpectedly")))
+                })
+                .collect()
         });
         let mut out = Vec::new();
         for r in results {
@@ -421,7 +551,8 @@ impl Provider for Google {
     fn create(&self, event: &NewEvent) -> Result<String> {
         check_span(&event.start, &event.end)?;
         let cal = provider::local_id(&self.name, "Google", &event.calendar_id)?;
-        let mut body = json!({ "summary": event.title, "start": when_json(&event.start), "end": when_json(&event.end) });
+        let mut body =
+            json!({ "summary": event.title, "start": when_json(&event.start), "end": when_json(&event.end) });
         if let Some(l) = event.location.as_deref().filter(|l| !l.trim().is_empty()) {
             body["location"] = json!(l);
         }
@@ -431,7 +562,10 @@ impl Provider for Google {
         let created = self.call("events", "insert", json!({ "calendarId": cal }), Some(&body))?;
         let id = text(&created["id"]);
         if id.is_empty() {
-            return Err(self.fail(ErrorKind::AccountUnavailable, "unexpected answer to `gws calendar events insert` (no id)"));
+            return Err(self.fail(
+                ErrorKind::AccountUnavailable,
+                "unexpected answer to `gws calendar events insert` (no id)",
+            ));
         }
         Ok(format!("{}:{cal}/{id}", self.name))
     }
@@ -463,12 +597,24 @@ impl Provider for Google {
         if body.is_empty() {
             return Ok(id.to_string());
         }
-        self.call("events", "patch", json!({ "calendarId": cal, "eventId": target }), Some(&Value::Object(body))).map(|_| id.to_string())
+        self.call(
+            "events",
+            "patch",
+            json!({ "calendarId": cal, "eventId": target }),
+            Some(&Value::Object(body)),
+        )
+        .map(|_| id.to_string())
     }
 
     fn delete(&self, id: &str) -> Result<()> {
         let (cal, ev, occurrence) = self.event_ref(id)?;
         let target = if occurrence { self.target(id)?.1 } else { ev.to_string() };
-        self.call("events", "delete", json!({ "calendarId": cal, "eventId": target }), None).map(|_| ())
+        self.call(
+            "events",
+            "delete",
+            json!({ "calendarId": cal, "eventId": target }),
+            None,
+        )
+        .map(|_| ())
     }
 }

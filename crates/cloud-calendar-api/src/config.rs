@@ -47,16 +47,22 @@ pub struct Config {
 
 impl Config {
     pub fn notify_minutes(&self) -> Vec<u32> {
-        self.notify_minutes.clone().unwrap_or_else(|| DEFAULT_NOTIFY_MINUTES.to_vec())
+        self.notify_minutes
+            .clone()
+            .unwrap_or_else(|| DEFAULT_NOTIFY_MINUTES.to_vec())
     }
 }
 
 pub fn config_dir() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".config")).join("cloud-calendar")
+    dirs::config_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".config"))
+        .join("cloud-calendar")
 }
 
 pub fn state_dir() -> PathBuf {
-    dirs::state_dir().unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/state")).join("cloud-calendar")
+    dirs::state_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/state"))
+        .join("cloud-calendar")
 }
 
 pub fn path() -> PathBuf {
@@ -70,16 +76,21 @@ pub fn load() -> Result<Config> {
 
 pub fn read(path: &Path) -> Result<Config> {
     match std::fs::read_to_string(path) {
-        Ok(text) => toml::from_str(&text).map_err(|e| Error::new(ErrorKind::Config, format!("could not parse {}: {e}", path.display()))),
+        Ok(text) => toml::from_str(&text)
+            .map_err(|e| Error::new(ErrorKind::Config, format!("could not parse {}: {e}", path.display()))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
-        Err(e) => Err(Error::new(ErrorKind::Config, format!("could not read {}: {e}", path.display()))),
+        Err(e) => Err(Error::new(
+            ErrorKind::Config,
+            format!("could not read {}: {e}", path.display()),
+        )),
     }
 }
 
 pub fn save(config: &Config) -> Result<PathBuf> {
     let p = path();
     let text = toml::to_string(config).map_err(|e| Error::new(ErrorKind::Config, e.to_string()))?;
-    write_private(&p, text.as_bytes()).map_err(|e| Error::new(ErrorKind::Config, format!("could not write {}: {e}", p.display())))?;
+    write_private(&p, text.as_bytes())
+        .map_err(|e| Error::new(ErrorKind::Config, format!("could not write {}: {e}", p.display())))?;
     Ok(p)
 }
 
@@ -88,11 +99,21 @@ pub fn save(config: &Config) -> Result<PathBuf> {
 pub fn update<T>(change: impl FnOnce(&mut Config) -> Result<T>) -> Result<T> {
     let p = path();
     let lock_path = p.with_file_name("config.lock");
-    let lock_err = |e: std::io::Error| Error::new(ErrorKind::Config, format!("could not lock {}: {e}", lock_path.display()));
+    let lock_err = |e: std::io::Error| {
+        Error::new(
+            ErrorKind::Config,
+            format!("could not lock {}: {e}", lock_path.display()),
+        )
+    };
     if let Some(dir) = lock_path.parent() {
         private_dir(dir).map_err(lock_err)?;
     }
-    let lock = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&lock_path).map_err(lock_err)?;
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock_path)
+        .map_err(lock_err)?;
     lock.lock().map_err(lock_err)?;
     let mut config = read(&p)?;
     let out = change(&mut config)?;

@@ -53,18 +53,42 @@ pub fn session_error(e: icloud_session::Error, account: &str) -> Error {
     use icloud_session::Error as S;
     let fail = |kind: ErrorKind, m: String| Error::new(kind, format!("iCloud: {m}"));
     match e {
-        S::SignInRequired => fail(ErrorKind::AccountAuth, format!("signed out; sign in again (`cloud-calendar account login {account}`, or in the app)")),
+        S::SignInRequired => fail(
+            ErrorKind::AccountAuth,
+            format!("signed out; sign in again (`cloud-calendar account login {account}`, or in the app)"),
+        ),
         // icloud-sessiond is still signed in but can't read its cookie jar from the keyring.
-        S::KeyringUnavailable(m) => fail(ErrorKind::KeyringUnavailable, format!("icloud-session can't read its sign-in from the keyring ({m}); unlock or start the keyring")),
-        S::Http { status: 404, .. } => fail(ErrorKind::NotFound, "no such event or calendar (deleted elsewhere?)".into()),
-        S::Http { status: 412, .. } => fail(ErrorKind::BadRequest, "the event changed elsewhere while it was being saved; reload and try again".into()),
-        S::Http { status, body } => fail(ErrorKind::AccountUnavailable, format!("Apple answered HTTP {status}: {}", body.chars().take(200).collect::<String>())),
+        S::KeyringUnavailable(m) => fail(
+            ErrorKind::KeyringUnavailable,
+            format!("icloud-session can't read its sign-in from the keyring ({m}); unlock or start the keyring"),
+        ),
+        S::Http { status: 404, .. } => fail(
+            ErrorKind::NotFound,
+            "no such event or calendar (deleted elsewhere?)".into(),
+        ),
+        S::Http { status: 412, .. } => fail(
+            ErrorKind::BadRequest,
+            "the event changed elsewhere while it was being saved; reload and try again".into(),
+        ),
+        S::Http { status, body } => fail(
+            ErrorKind::AccountUnavailable,
+            format!(
+                "Apple answered HTTP {status}: {}",
+                body.chars().take(200).collect::<String>()
+            ),
+        ),
         S::Offline(m) | S::Network(m) => fail(ErrorKind::AccountUnavailable, format!("couldn't reach iCloud ({m})")),
         // Apple answered, but not in a shape this version reads: neither offline nor signed out.
-        S::BadResponse(m) => fail(ErrorKind::AccountUnavailable, format!("Apple answered something this version can't read ({m})")),
+        S::BadResponse(m) => fail(
+            ErrorKind::AccountUnavailable,
+            format!("Apple answered something this version can't read ({m})"),
+        ),
         S::Service(m) => service_error(&m),
         // Calendars never use Find My's own session.
-        S::FindMyAuthRequired => fail(ErrorKind::AccountUnavailable, "icloud-session asked for Find My's password, which calendars don't use".into()),
+        S::FindMyAuthRequired => fail(
+            ErrorKind::AccountUnavailable,
+            "icloud-session asked for Find My's password, which calendars don't use".into(),
+        ),
         S::Io(e) => fail(ErrorKind::AccountUnavailable, format!("icloud-session: {e}")),
     }
 }
@@ -77,7 +101,10 @@ pub fn service_error(message: &str) -> Error {
             "iCloud: icloud-session isn't installed. iCloud calendars use the iCloud sign-in it keeps for your iCloud apps; install it from icloud-for-omarchy (the icloud-session package), then add iCloud again",
         );
     }
-    Error::new(ErrorKind::AccountUnavailable, format!("iCloud: icloud-session failed ({message})"))
+    Error::new(
+        ErrorKind::AccountUnavailable,
+        format!("iCloud: icloud-session failed ({message})"),
+    )
 }
 
 pub struct ICloud {
@@ -93,7 +120,8 @@ pub fn zone() -> Result<(String, Tz)> {
         if std::fs::symlink_metadata("/etc/localtime").is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound) {
             return Ok("UTC".to_string());
         }
-        iana_time_zone::get_timezone().map_err(|e| Error::new(ErrorKind::Config, format!("this computer's time zone is unknown ({e})")))
+        iana_time_zone::get_timezone()
+            .map_err(|e| Error::new(ErrorKind::Config, format!("this computer's time zone is unknown ({e})")))
     };
     let name = match std::env::var("TZ").ok().as_deref().and_then(tz_name) {
         Some(name) => name,
@@ -101,7 +129,12 @@ pub fn zone() -> Result<(String, Tz)> {
         // system's own zone, as the C library falls back to.
         None => system()?,
     };
-    let tz: Tz = name.parse().map_err(|_| Error::new(ErrorKind::Config, format!("\"{name}\" isn't a known time zone (an IANA name such as Europe/London)")))?;
+    let tz: Tz = name.parse().map_err(|_| {
+        Error::new(
+            ErrorKind::Config,
+            format!("\"{name}\" isn't a known time zone (an IANA name such as Europe/London)"),
+        )
+    })?;
     Ok((name, tz))
 }
 
@@ -114,7 +147,11 @@ pub fn tz_name(value: &str) -> Option<String> {
         return None;
     }
     if v.starts_with('/') {
-        let named = |p: &str| p.split_once("zoneinfo/").map(|(_, name)| name.to_string()).filter(|n| n.parse::<Tz>().is_ok());
+        let named = |p: &str| {
+            p.split_once("zoneinfo/")
+                .map(|(_, name)| name.to_string())
+                .filter(|n| n.parse::<Tz>().is_ok())
+        };
         return named(v).or_else(|| named(&std::fs::canonicalize(v).ok()?.to_string_lossy()));
     }
     v.parse::<Tz>().is_ok().then(|| v.to_string())
@@ -123,7 +160,15 @@ pub fn tz_name(value: &str) -> Option<String> {
 /// Apple's date array for a wall-clock time.
 pub fn apple_date(t: NaiveDateTime) -> Value {
     let minutes = t.hour() * 60 + t.minute();
-    json!([t.format("%Y%m%d").to_string().parse::<u32>().unwrap_or(0), t.year(), t.month(), t.day(), t.hour(), t.minute(), minutes])
+    json!([
+        t.format("%Y%m%d").to_string().parse::<u32>().unwrap_or(0),
+        t.year(),
+        t.month(),
+        t.day(),
+        t.hour(),
+        t.minute(),
+        minutes
+    ])
 }
 
 /// The wall-clock time in an Apple date array (its first six fields).
@@ -135,12 +180,19 @@ pub fn read_apple_date(v: &Value) -> Option<NaiveDateTime> {
 
 /// An event's start and end from its date arrays, `allDay` and `tz`.
 pub fn event_span(e: &Value, local: &Tz) -> Result<(Time, Time)> {
-    let bad = |what: &str| Error::new(ErrorKind::AccountUnavailable, format!("iCloud: an event's {what} wasn't understood"));
+    let bad = |what: &str| {
+        Error::new(
+            ErrorKind::AccountUnavailable,
+            format!("iCloud: an event's {what} wasn't understood"),
+        )
+    };
     let start = read_apple_date(&e["startDate"]).ok_or_else(|| bad("start"))?;
     let end = read_apple_date(&e["endDate"]).ok_or_else(|| bad("end"))?;
     if e["allDay"] == json!(true) {
         let (s, x) = (start.date(), end.date());
-        let next = s.checked_add_days(chrono::Days::new(1)).ok_or_else(|| bad("start date"))?;
+        let next = s
+            .checked_add_days(chrono::Days::new(1))
+            .ok_or_else(|| bad("start date"))?;
         return Ok((Time::Date(s), Time::Date(x.max(next))));
     }
     let zone: Tz = match e["tz"].as_str().filter(|z| !z.is_empty()) {
@@ -148,7 +200,12 @@ pub fn event_span(e: &Value, local: &Tz) -> Result<(Time, Time)> {
         // No zone: a floating time, read in your own.
         None => *local,
     };
-    let at = |t: NaiveDateTime| zone.from_local_datetime(&t).earliest().map(|x| Time::At(x.with_timezone(&Utc))).ok_or_else(|| bad("time"));
+    let at = |t: NaiveDateTime| {
+        zone.from_local_datetime(&t)
+            .earliest()
+            .map(|x| Time::At(x.with_timezone(&Utc)))
+            .ok_or_else(|| bad("time"))
+    };
     let (s, x) = (at(start)?, at(end)?);
     Ok((s, x.max(s)))
 }
@@ -163,7 +220,12 @@ fn span_fields(start: &Time, end: &Time, local: &(String, Tz)) -> serde_json::Ma
         }
         _ => {
             let wall = |t: &Time| t.instant().with_timezone(&local.1).naive_local();
-            (wall(start), wall(end), false, (end.instant() - start.instant()).num_minutes())
+            (
+                wall(start),
+                wall(end),
+                false,
+                (end.instant() - start.instant()).num_minutes(),
+            )
         }
     };
     for (k, v) in [("startDate", s), ("localStartDate", s)] {
@@ -185,15 +247,34 @@ fn upper_uuid() -> std::io::Result<String> {
     b[6] = b[6] & 0x0f | 0x40;
     b[8] = b[8] & 0x3f | 0x80;
     let hex: String = b.iter().map(|x| format!("{x:02X}")).collect();
-    Ok(format!("{}-{}-{}-{}-{}", &hex[0..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..32]))
+    Ok(format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    ))
 }
 
 fn percent(s: &str) -> String {
-    s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
+    s.bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect()
 }
 
 fn query(params: &[(&str, String)]) -> String {
-    params.iter().map(|(k, v)| format!("{k}={}", percent(v))).collect::<Vec<_>>().join("&")
+    params
+        .iter()
+        .map(|(k, v)| format!("{k}={}", percent(v)))
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 fn day(d: NaiveDate) -> String {
@@ -202,7 +283,10 @@ fn day(d: NaiveDate) -> String {
 
 impl ICloud {
     pub fn new(name: &str, _cfg: &AccountConfig) -> Self {
-        Self { name: name.into(), session: Mutex::new(None) }
+        Self {
+            name: name.into(),
+            session: Mutex::new(None),
+        }
     }
 
     fn fail(&self, kind: ErrorKind, message: impl AsRef<str>) -> Error {
@@ -227,7 +311,12 @@ impl ICloud {
 
     fn base(&self, s: &icloud_session::Session) -> Result<String> {
         let ws = s.webservices().map_err(|e| self.map(e))?;
-        let url = ws.url("calendar").ok_or_else(|| self.fail(ErrorKind::AccountUnavailable, "iCloud offers no Calendar service for this account"))?;
+        let url = ws.url("calendar").ok_or_else(|| {
+            self.fail(
+                ErrorKind::AccountUnavailable,
+                "iCloud offers no Calendar service for this account",
+            )
+        })?;
         Ok(format!("{}/ca", url.trim_end_matches('/')))
     }
 
@@ -245,14 +334,24 @@ impl ICloud {
     }
 
     fn common(&self, zone: &str, from: NaiveDate, to: NaiveDate) -> Vec<(&'static str, String)> {
-        vec![("lang", "en-us".into()), ("usertz", zone.into()), ("startDate", day(from)), ("endDate", day(to))]
+        vec![
+            ("lang", "en-us".into()),
+            ("usertz", zone.into()),
+            ("startDate", day(from)),
+            ("endDate", day(to)),
+        ]
     }
 
     fn collections(&self) -> Result<Vec<Value>> {
         let (zone, tz) = zone()?;
         let today = Utc::now().with_timezone(&tz).date_naive();
         let data = self.get("allcollections", &self.common(&zone, today, today))?;
-        data["Collection"].as_array().cloned().ok_or_else(|| self.fail(ErrorKind::AccountUnavailable, "unexpected answer to /ca/allcollections (no Collection)"))
+        data["Collection"].as_array().cloned().ok_or_else(|| {
+            self.fail(
+                ErrorKind::AccountUnavailable,
+                "unexpected answer to /ca/allcollections (no Collection)",
+            )
+        })
     }
 
     fn calendar_of(&self, c: &Value) -> Option<Calendar> {
@@ -261,7 +360,10 @@ impl ICloud {
             id: format!("{}:{guid}", self.name),
             account: self.name.clone(),
             name: c["title"].as_str().unwrap_or(guid).to_string(),
-            color: c["color"].as_str().filter(|c| c.starts_with('#')).map(|c| c.chars().take(7).collect()),
+            color: c["color"]
+                .as_str()
+                .filter(|c| c.starts_with('#'))
+                .map(|c| c.chars().take(7).collect()),
             writable: c["readOnly"] != json!(true),
         })
     }
@@ -276,13 +378,22 @@ impl ICloud {
                 format!("this is a repeating event, which Cloud Calendar can't {action} on iCloud yet: icloud.com's way of changing a whole series isn't established; use the Calendar app or icloud.com"),
             ));
         }
-        base.split_once('/').filter(|(p, g)| !p.is_empty() && !g.is_empty()).ok_or_else(|| self.fail(ErrorKind::NotFound, format!("{id} isn't an iCloud event ID")))
+        base.split_once('/')
+            .filter(|(p, g)| !p.is_empty() && !g.is_empty())
+            .ok_or_else(|| self.fail(ErrorKind::NotFound, format!("{id} isn't an iCloud event ID")))
     }
 
     fn ctag(&self, pguid: &str) -> Result<Value> {
-        let c = self.collections()?.into_iter().find(|c| c["guid"] == json!(pguid)).ok_or_else(|| self.fail(ErrorKind::NotFound, format!("no calendar {}:{pguid}", self.name)))?;
+        let c = self
+            .collections()?
+            .into_iter()
+            .find(|c| c["guid"] == json!(pguid))
+            .ok_or_else(|| self.fail(ErrorKind::NotFound, format!("no calendar {}:{pguid}", self.name)))?;
         if c["readOnly"] == json!(true) {
-            return Err(self.fail(ErrorKind::BadRequest, format!("{} is read-only", c["title"].as_str().unwrap_or(pguid))));
+            return Err(self.fail(
+                ErrorKind::BadRequest,
+                format!("{} is read-only", c["title"].as_str().unwrap_or(pguid)),
+            ));
         }
         Ok(c["ctag"].clone())
     }
@@ -290,9 +401,19 @@ impl ICloud {
     /// The event as `/ca/eventdetail` has it, with its etag.
     fn detail(&self, pguid: &str, guid: &str) -> Result<(Value, Value, String)> {
         let (zone, _) = zone()?;
-        let data = self.get(&format!("eventdetail/{pguid}/{guid}"), &[("lang", "en-us".into()), ("usertz", zone)])?;
-        let event = data["Event"].get(0).cloned().ok_or_else(|| self.fail(ErrorKind::NotFound, "no such event (deleted elsewhere?)"))?;
-        let etag = event["etag"].as_str().filter(|e| !e.is_empty()).ok_or_else(|| self.fail(ErrorKind::AccountUnavailable, "the event came without an etag"))?.to_string();
+        let data = self.get(
+            &format!("eventdetail/{pguid}/{guid}"),
+            &[("lang", "en-us".into()), ("usertz", zone)],
+        )?;
+        let event = data["Event"]
+            .get(0)
+            .cloned()
+            .ok_or_else(|| self.fail(ErrorKind::NotFound, "no such event (deleted elsewhere?)"))?;
+        let etag = event["etag"]
+            .as_str()
+            .filter(|e| !e.is_empty())
+            .ok_or_else(|| self.fail(ErrorKind::AccountUnavailable, "the event came without an etag"))?
+            .to_string();
         Ok((event, data, etag))
     }
 
@@ -313,7 +434,12 @@ impl Provider for ICloud {
     }
 
     fn status(&self) -> AccountStatus {
-        let mut s = AccountStatus { name: self.name.clone(), provider: "icloud".into(), label: "iCloud".into(), ..Default::default() };
+        let mut s = AccountStatus {
+            name: self.name.clone(),
+            provider: "icloud".into(),
+            label: "iCloud".into(),
+            ..Default::default()
+        };
         match icloud_session::status() {
             Ok(st) if st.signed_in => {
                 s.ok = true;
@@ -341,20 +467,35 @@ impl Provider for ICloud {
         let (zone, tz) = zone()?;
         let calendars = self.calendars()?;
         let from = range.start.with_timezone(&tz).date_naive();
-        let to = (range.end - chrono::Duration::seconds(1)).with_timezone(&tz).date_naive().max(from);
+        let to = (range.end - chrono::Duration::seconds(1))
+            .with_timezone(&tz)
+            .date_naive()
+            .max(from);
         let data = self.get("events", &self.common(&zone, from, to))?;
         let list = data["Event"].as_array().cloned().unwrap_or_default();
         let mut out = Vec::new();
         for e in &list {
-            let (Some(pguid), Some(guid)) = (e["pGuid"].as_str(), e["guid"].as_str()) else { continue };
+            let (Some(pguid), Some(guid)) = (e["pGuid"].as_str(), e["guid"].as_str()) else {
+                continue;
+            };
             let (start, end) = event_span(e, &tz)?;
             if !range.overlaps(&start, &end) {
                 continue;
             }
-            let recurring = e["recurrence"].as_str().is_some_and(|r| !r.is_empty()) || e["recurrenceMaster"] == json!(true);
-            let suffix = if recurring { provider::occurrence_suffix(&start) } else { String::new() };
+            let recurring =
+                e["recurrence"].as_str().is_some_and(|r| !r.is_empty()) || e["recurrenceMaster"] == json!(true);
+            let suffix = if recurring {
+                provider::occurrence_suffix(&start)
+            } else {
+                String::new()
+            };
             let cal = calendars.iter().find(|c| c.id == format!("{}:{pguid}", self.name));
-            let text = |k: &str| e[k].as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+            let text = |k: &str| {
+                e[k].as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            };
             out.push(Event {
                 id: format!("{}:{pguid}/{guid}{suffix}", self.name),
                 account: self.name.clone(),
@@ -378,7 +519,12 @@ impl Provider for ICloud {
         let local = zone()?;
         let pguid = provider::local_id(&self.name, "iCloud", &event.calendar_id)?;
         let ctag = self.ctag(pguid)?;
-        let guid = upper_uuid().map_err(|e| self.fail(ErrorKind::AccountUnavailable, format!("can't read /dev/urandom for a new event ID: {e}")))?;
+        let guid = upper_uuid().map_err(|e| {
+            self.fail(
+                ErrorKind::AccountUnavailable,
+                format!("can't read /dev/urandom for a new event ID: {e}"),
+            )
+        })?;
         let now = apple_date(Utc::now().with_timezone(&local.1).naive_local());
         let mut ev = json!({
             "title": event.title, "icon": 0, "pGuid": pguid, "guid": guid,
@@ -389,10 +535,19 @@ impl Provider for ICloud {
             "location": event.location.clone().unwrap_or_default(), "url": "", "description": event.notes.clone().unwrap_or_default(),
             "etag": "", "alarms": [], "attachments": [], "invitees": [], "changeRecurring": null,
         });
-        ev.as_object_mut().unwrap().extend(span_fields(&event.start, &event.end, &local));
+        ev.as_object_mut()
+            .unwrap()
+            .extend(span_fields(&event.start, &event.end, &local));
         let body = json!({ "Event": ev, "Invitee": [], "Alarm": [], "ClientState": { "Collection": [{ "guid": pguid, "ctag": ctag }], "fullState": false } });
-        let (from, to) = (event.start.instant().with_timezone(&local.1).date_naive(), event.end.instant().with_timezone(&local.1).date_naive());
-        self.post(&format!("events/{pguid}/{guid}"), &self.common(&local.0, from, to), &body)?;
+        let (from, to) = (
+            event.start.instant().with_timezone(&local.1).date_naive(),
+            event.end.instant().with_timezone(&local.1).date_naive(),
+        );
+        self.post(
+            &format!("events/{pguid}/{guid}"),
+            &self.common(&local.0, from, to),
+            &body,
+        )?;
         Ok(format!("{}:{pguid}/{guid}", self.name))
     }
 
@@ -401,8 +556,14 @@ impl Provider for ICloud {
         let local = zone()?;
         let (mut ev, detail, etag) = self.detail(pguid, guid)?;
         let (start, end) = event_span(&ev, &local.1)?;
-        let (s, e) = if change.moves() { provider::changed_span(change, start, end)? } else { (start, end) };
-        let o = ev.as_object_mut().ok_or_else(|| self.fail(ErrorKind::AccountUnavailable, "the event wasn't understood"))?;
+        let (s, e) = if change.moves() {
+            provider::changed_span(change, start, end)?
+        } else {
+            (start, end)
+        };
+        let o = ev
+            .as_object_mut()
+            .ok_or_else(|| self.fail(ErrorKind::AccountUnavailable, "the event wasn't understood"))?;
         if let Some(t) = &change.title {
             o.insert("title".into(), json!(t));
         }
@@ -415,14 +576,31 @@ impl Provider for ICloud {
         if change.moves() {
             o.extend(span_fields(&s, &e, &local));
         }
-        o.insert("lastModifiedDate".into(), apple_date(Utc::now().with_timezone(&local.1).naive_local()));
+        o.insert(
+            "lastModifiedDate".into(),
+            apple_date(Utc::now().with_timezone(&local.1).naive_local()),
+        );
         // The event's own alarms and invitees go back as they came.
-        let mine = |k: &str| Value::Array(detail[k].as_array().into_iter().flatten().filter(|a| a["pGuid"] == json!(guid)).cloned().collect());
+        let mine = |k: &str| {
+            Value::Array(
+                detail[k]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|a| a["pGuid"] == json!(guid))
+                    .cloned()
+                    .collect(),
+            )
+        };
         let body = json!({ "Event": ev, "Invitee": mine("Invitee"), "Alarm": mine("Alarm"), "ClientState": { "Collection": [{ "guid": pguid, "ctag": self.ctag(pguid)? }], "fullState": false } });
-        let (from, to) = (s.instant().min(start.instant()).with_timezone(&local.1).date_naive(), e.instant().max(end.instant()).with_timezone(&local.1).date_naive());
+        let (from, to) = (
+            s.instant().min(start.instant()).with_timezone(&local.1).date_naive(),
+            e.instant().max(end.instant()).with_timezone(&local.1).date_naive(),
+        );
         let mut params = self.common(&local.0, from, to);
         params.extend([("methodOverride", "PUT".to_string()), ("ifMatch", etag)]);
-        self.post(&format!("events/{pguid}/{guid}"), &params, &body).map(|_| id.to_string())
+        self.post(&format!("events/{pguid}/{guid}"), &params, &body)
+            .map(|_| id.to_string())
     }
 
     fn delete(&self, id: &str) -> Result<()> {
@@ -431,13 +609,20 @@ impl Provider for ICloud {
         let (ev, _, etag) = self.detail(pguid, guid)?;
         let (start, end) = event_span(&ev, &local.1)?;
         let body = json!({ "Event": {}, "Invitee": [], "Alarm": [], "ClientState": { "Collection": [{ "guid": pguid, "ctag": self.ctag(pguid)? }], "fullState": false } });
-        let mut params = self.common(&local.0, start.instant().with_timezone(&local.1).date_naive(), end.instant().with_timezone(&local.1).date_naive());
+        let mut params = self.common(
+            &local.0,
+            start.instant().with_timezone(&local.1).date_naive(),
+            end.instant().with_timezone(&local.1).date_naive(),
+        );
         params.extend([("methodOverride", "DELETE".to_string()), ("ifMatch", etag)]);
         self.post(&format!("events/{pguid}/{guid}"), &params, &body).map(|_| ())
     }
 
     fn series_support(&self) -> provider::SeriesSupport {
-        provider::SeriesSupport { edit: false, delete: false }
+        provider::SeriesSupport {
+            edit: false,
+            delete: false,
+        }
     }
 }
 
@@ -448,7 +633,10 @@ mod tests {
     fn tz_values_resolve_like_the_c_library() {
         assert_eq!(tz_name("Europe/London").as_deref(), Some("Europe/London"));
         assert_eq!(tz_name(":Europe/London").as_deref(), Some("Europe/London"));
-        assert_eq!(tz_name(":/usr/share/zoneinfo/Europe/London").as_deref(), Some("Europe/London"));
+        assert_eq!(
+            tz_name(":/usr/share/zoneinfo/Europe/London").as_deref(),
+            Some("Europe/London")
+        );
         // POSIX rules and nonsense have no IANA name: the system zone is used instead.
         assert_eq!(tz_name("EST5EDT,M3.2.0,M11.1.0"), None);
         assert_eq!(tz_name(""), None);
@@ -460,8 +648,16 @@ mod tests {
     fn new_event_guids_are_random_v4() {
         let (a, b) = (upper_uuid().unwrap(), upper_uuid().unwrap());
         let parts: Vec<&str> = a.split('-').collect();
-        assert_eq!(parts.iter().map(|p| p.len()).collect::<Vec<_>>(), [8, 4, 4, 4, 12], "{a}");
-        assert!(a.chars().all(|c| c == '-' || c.is_ascii_digit() || c.is_ascii_uppercase()), "{a}");
+        assert_eq!(
+            parts.iter().map(|p| p.len()).collect::<Vec<_>>(),
+            [8, 4, 4, 4, 12],
+            "{a}"
+        );
+        assert!(
+            a.chars()
+                .all(|c| c == '-' || c.is_ascii_digit() || c.is_ascii_uppercase()),
+            "{a}"
+        );
         assert!(parts[2].starts_with('4') && "89AB".contains(&parts[3][..1]), "{a}");
         // The leading digits vary too, not only the clock-driven tail.
         assert_ne!(a[..13], b[..13]);
@@ -478,7 +674,13 @@ mod tests {
         // All-day: tz null, end exclusive.
         let d = |n| NaiveDate::from_ymd_opt(2027, 7, n).unwrap();
         let e = json!({"allDay": true, "tz": null, "startDate": [20270731, 2027, 7, 31, 0, 0, 0], "endDate": [20270801, 2027, 8, 1, 0, 0, 1440]});
-        assert_eq!(event_span(&e, &local).unwrap(), (Time::Date(d(31)), Time::Date(NaiveDate::from_ymd_opt(2027, 8, 1).unwrap())));
+        assert_eq!(
+            event_span(&e, &local).unwrap(),
+            (
+                Time::Date(d(31)),
+                Time::Date(NaiveDate::from_ymd_opt(2027, 8, 1).unwrap())
+            )
+        );
     }
 
     #[test]
@@ -489,7 +691,10 @@ mod tests {
         let f = span_fields(&start, &end, &local);
         assert_eq!(f["startDate"], json!([20260530, 2026, 5, 30, 20, 0, 1200]));
         assert_eq!(f["endDate"], json!([20260530, 2026, 5, 30, 21, 0, 1260]));
-        assert_eq!((f["duration"].clone(), f["tz"].clone(), f["allDay"].clone()), (json!(60), json!("Europe/Berlin"), json!(false)));
+        assert_eq!(
+            (f["duration"].clone(), f["tz"].clone(), f["allDay"].clone()),
+            (json!(60), json!("Europe/Berlin"), json!(false))
+        );
         let d = |y, m, n| Time::Date(NaiveDate::from_ymd_opt(y, m, n).unwrap());
         let f = span_fields(&d(2027, 7, 31), &d(2027, 8, 9), &local);
         assert_eq!((f["duration"].clone(), f["tz"].clone()), (json!(12960), Value::Null));

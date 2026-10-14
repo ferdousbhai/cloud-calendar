@@ -22,19 +22,31 @@ pub fn bounded(d: NaiveDate, what: &str) -> Result<NaiveDate> {
 pub fn parse_date(s: &str, today: NaiveDate) -> Result<NaiveDate> {
     let s = s.trim().to_ascii_lowercase();
     let out_of_range = || Error::bad_request(format!("{s} is out of range (years 1 to 9999)"));
-    let shifted = |n: i64| chrono::Duration::try_days(n).and_then(|d| today.checked_add_signed(d)).ok_or_else(out_of_range);
+    let shifted = |n: i64| {
+        chrono::Duration::try_days(n)
+            .and_then(|d| today.checked_add_signed(d))
+            .ok_or_else(out_of_range)
+    };
     let date = match s.as_str() {
         "today" => Ok(today),
         "tomorrow" => shifted(1),
         "yesterday" => shifted(-1),
-        _ if (s.starts_with('+') || s.starts_with('-')) && s[1..].chars().all(|c| c.is_ascii_digit()) && s.len() > 1 => shifted(s.parse().map_err(|_| out_of_range())?),
-        _ => NaiveDate::parse_from_str(&s, "%Y-%m-%d").map_err(|_| Error::bad_request(format!("\"{s}\" isn't a date (YYYY-MM-DD, today, tomorrow or +N)"))),
+        _ if (s.starts_with('+') || s.starts_with('-'))
+            && s[1..].chars().all(|c| c.is_ascii_digit())
+            && s.len() > 1 =>
+        {
+            shifted(s.parse().map_err(|_| out_of_range())?)
+        }
+        _ => NaiveDate::parse_from_str(&s, "%Y-%m-%d")
+            .map_err(|_| Error::bad_request(format!("\"{s}\" isn't a date (YYYY-MM-DD, today, tomorrow or +N)"))),
     }?;
     bounded(date, &s)
 }
 
 fn parse_clock(s: &str) -> Option<NaiveTime> {
-    NaiveTime::parse_from_str(s, "%H:%M").or_else(|_| NaiveTime::parse_from_str(s, "%H:%M:%S")).ok()
+    NaiveTime::parse_from_str(s, "%H:%M")
+        .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M:%S"))
+        .ok()
 }
 
 /// A local wall-clock time as an instant (the earlier one when a DST change repeats it).
@@ -58,7 +70,9 @@ pub fn parse_time(s: &str, today: NaiveDate) -> Result<Time> {
     }
     // `T` separates only after a YYYY-MM-DD date (`2026-10-10T14:00`); a space anywhere
     // (`Tomorrow 14:00`), so a word with a T in it is never split.
-    let iso_t = s.len() > 10 && s.as_bytes()[10].eq_ignore_ascii_case(&b'T') && NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d").is_ok();
+    let iso_t = s.len() > 10
+        && s.as_bytes()[10].eq_ignore_ascii_case(&b'T')
+        && NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d").is_ok();
     let (day, clock) = if iso_t {
         (&s[..10], Some(s[11..].trim()))
     } else {
@@ -87,14 +101,20 @@ pub fn parse_length(s: &str) -> Result<chrono::Duration> {
         match c {
             '0'..='9' => num.push(c),
             'd' | 'h' | 'm' => {
-                let n: i64 = num.parse().map_err(|_| if num.is_empty() { bad() } else { too_long() })?;
+                let n: i64 = num
+                    .parse()
+                    .map_err(|_| if num.is_empty() { bad() } else { too_long() })?;
                 num.clear();
                 let unit = match c {
                     'd' => 86_400,
                     'h' => 3_600,
                     _ => 60,
                 };
-                total = n.checked_mul(unit).and_then(|x| total.checked_add(x)).filter(|t| *t <= max).ok_or_else(too_long)?;
+                total = n
+                    .checked_mul(unit)
+                    .and_then(|x| total.checked_add(x))
+                    .filter(|t| *t <= max)
+                    .ok_or_else(too_long)?;
             }
             _ => return Err(bad()),
         }
@@ -110,7 +130,10 @@ pub fn add_length(start: &Time, len: chrono::Duration) -> Result<Time> {
     let out = || Error::bad_request("the end is out of range (years 1 to 9999)");
     let end = match start {
         Time::At(t) => Time::At(t.checked_add_signed(len).ok_or_else(out)?),
-        Time::Date(d) => Time::Date(d.checked_add_days(chrono::Days::new(len.num_days().max(1) as u64)).ok_or_else(out)?),
+        Time::Date(d) => Time::Date(
+            d.checked_add_days(chrono::Days::new(len.num_days().max(1) as u64))
+                .ok_or_else(out)?,
+        ),
     };
     bounded(end.local_date(), "the end")?;
     Ok(end)
@@ -146,7 +169,10 @@ mod tests {
         assert_eq!(at.local_date(), day(10));
         assert_eq!(parse_time("2026-10-10T14:00", day(9)).unwrap(), at);
         assert_eq!(parse_time("2026-10-10 14:00", day(9)).unwrap(), at);
-        assert_eq!(parse_time("2026-10-10T12:00:00Z", day(9)).unwrap(), Time::At(Utc.with_ymd_and_hms(2026, 10, 10, 12, 0, 0).unwrap()));
+        assert_eq!(
+            parse_time("2026-10-10T12:00:00Z", day(9)).unwrap(),
+            Time::At(Utc.with_ymd_and_hms(2026, 10, 10, 12, 0, 0).unwrap())
+        );
         assert_eq!(parse_time("09:30", day(9)).unwrap().local_date(), day(9));
         assert!(parse_time("2026-10-10 25:00", day(9)).is_err());
         assert_eq!(parse_time("Tomorrow", day(9)).unwrap(), Time::Date(day(10)));
