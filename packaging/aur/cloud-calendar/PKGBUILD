@@ -26,20 +26,20 @@ prepare() {
 
 build() {
   cd "$(_srcdir)"
-  export CARGO_TARGET_DIR=target
+  export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
   cargo build --frozen --release -p cloud-calendar -p cloud-calendar-gtk
 }
 
 check() {
   cd "$(_srcdir)"
-  export CARGO_TARGET_DIR=target
+  export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
   cargo test --frozen --workspace
 }
 
 package() {
   cd "$(_srcdir)"
-  install -Dm755 target/release/cloud-calendar "$pkgdir/usr/bin/cloud-calendar"
-  install -Dm755 target/release/cloud-calendar-gtk "$pkgdir/usr/bin/cloud-calendar-gtk"
+  install -Dm755 "${CARGO_TARGET_DIR:-target}/release/cloud-calendar" "$pkgdir/usr/bin/cloud-calendar"
+  install -Dm755 "${CARGO_TARGET_DIR:-target}/release/cloud-calendar-gtk" "$pkgdir/usr/bin/cloud-calendar-gtk"
   install -Dm644 crates/cloud-calendar-gtk/data/com.ferdousbhai.CloudCalendar.desktop \
     "$pkgdir/usr/share/applications/com.ferdousbhai.CloudCalendar.desktop"
   install -Dm644 crates/cloud-calendar-gtk/data/com.ferdousbhai.CloudCalendar.svg \

@@ -85,6 +85,33 @@ class VerificationTests(unittest.TestCase):
             self.assertFalse(log.exists())
 
 
+class PackageBuildTests(unittest.TestCase):
+    def test_native_build_mounts_persistent_caches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable(root / 'uname', 'echo aarch64\n')
+            executable(root / 'docker', 'printf "%s\\0" "$@" > "$CALL_LOG"\n')
+            log = root / 'args'
+            cache = root / 'package cache'
+            env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', CALL_LOG=str(log),
+                       ARM_BUILD_IMAGE='test-arm:latest', PACKAGE_CACHE=str(cache))
+            subprocess.run(['bash', str(ROOT / 'bin/build-package'), 'aarch64', str(root / 'output')],
+                           env=env, check=True)
+            args = log.read_bytes().decode().split('\0')[:-1]
+            self.assertIn(f'{cache}/pacman:/var/cache/pacman/pkg', args)
+            self.assertIn(f'{cache}/cargo:/cargo', args)
+            self.assertIn('CARGO_HOME=/cargo', args)
+            self.assertIn('CARGO_TARGET_DIR=/cargo/target', args)
+            self.assertIn('test-arm:latest', args)
+            self.assertTrue((cache / 'cargo').is_dir())
+            subprocess.run(['bash', '-n'], input=args[-1], text=True, check=True)
+            log.unlink()
+            result = subprocess.run(['bash', str(ROOT / 'bin/build-package'), 'x86_64'],
+                                    env=env, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(log.exists())
+
+
 class ReleaseTests(unittest.TestCase):
     def run_release(self, failure=''):
         with tempfile.TemporaryDirectory() as directory:
