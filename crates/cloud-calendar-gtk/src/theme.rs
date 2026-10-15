@@ -89,37 +89,38 @@ pub fn css(p: &Palette) -> String {
 window.cloud-calendar, window.editor {{
   background: {bg};
   color: {fg};
-  font-family: "JetBrainsMono Nerd Font", "JetBrains Mono", monospace;
-  font-size: 10.5pt;
+  font-family: monospace;
+  font-size: 10pt;
 }}
-.toolbar {{ padding: 8px 12px; border-bottom: 1px solid {lbg}; background: {dbg}; }}
+.toolbar {{ padding: 10px 16px; border-bottom: 1px solid alpha({fg}, 0.10); background: {bg}; }}
 .toolbar .period {{ color: {bfg}; font-weight: bold; padding: 0 10px; }}
-.toolbar .brand {{ color: {accent}; font-weight: bold; padding-right: 12px; }}
+.toolbar .brand {{ color: {fg}; font-weight: 600; padding-right: 12px; }}
 .warning {{ color: {red}; font-size: 9pt; padding: 4px 14px; }}
-.day {{ border-right: 1px solid {lbg}; padding: 6px; }}
-.day.today {{ background: {lbg}; }}
-.day-head {{ color: {dfg}; font-size: 9pt; font-weight: bold; padding: 2px 4px 8px 4px; }}
+.day {{ border-right: 1px solid alpha({fg}, 0.10); padding: 6px; }}
+.day.today {{ background: alpha({accent}, 0.035); }}
+.day-head {{ color: alpha({fg}, 0.65); font-size: 9pt; font-weight: bold; padding: 2px 4px 8px 4px; }}
 .today .day-head {{ color: {accent}; }}
 .agenda-day {{ color: {accent}; font-weight: bold; padding: 14px 16px 4px 16px; }}
-button.event {{ background: {dbg}; border: 1px solid {muted}; border-radius: 6px; padding: 4px 6px; margin: 2px 0; box-shadow: none; }}
-button.event:hover {{ background: {sel}; border-color: {accent}; }}
+button.event {{ background: alpha({fg}, 0.025); border: 1px solid alpha({fg}, 0.10); border-left: 2px solid alpha({accent}, 0.65); border-radius: 6px; padding: 7px 8px; margin: 2px 0; box-shadow: none; }}
+button.event:hover {{ background: alpha({accent}, 0.10); border-color: alpha({accent}, 0.5); }}
 button.event .title {{ color: {bfg}; }}
-button.event .when, button.event .where, .dim {{ color: {dfg}; font-size: 9pt; }}
-.agenda button.event {{ margin: 2px 16px; padding: 6px 10px; }}
-.empty {{ color: {dfg}; padding: 40px; }}
+button.event .when, button.event .where, .dim {{ color: alpha({fg}, 0.65); font-size: 9pt; }}
+.agenda button.event {{ margin: 2px 16px; padding: 9px 12px; }}
+.empty {{ color: alpha({fg}, 0.65); padding: 40px; }}
 .error {{ color: {red}; }}
 .setup {{ color: {fg}; padding: 30px; }}
 .setup-title {{ color: {accent}; font-weight: bold; font-size: 14pt; }}
 .editor {{ padding: 16px; }}
-.editor .field-label {{ color: {dfg}; }}
-.editor .note {{ color: {dfg}; font-size: 9pt; }}
-entry, textview, textview text, dropdown > button {{ background: {lbg}; color: {bfg}; caret-color: {accent}; }}
-entry {{ border: 1px solid {muted}; border-radius: 6px; box-shadow: none; }}
+.editor .field-label {{ color: alpha({fg}, 0.65); }}
+.editor .note {{ color: alpha({fg}, 0.65); font-size: 9pt; }}
+entry, textview, textview text, dropdown > button {{ background: alpha({fg}, 0.025); color: {bfg}; caret-color: {accent}; }}
+entry {{ min-height: 32px; border: 1px solid alpha({fg}, 0.16); border-radius: 6px; box-shadow: none; }}
 entry:focus-within {{ border-color: {accent}; outline: none; }}
 textview {{ padding: 8px; border-radius: 6px; }}
-button {{ background: {lbg}; color: {fg}; border: 1px solid {muted}; border-radius: 6px; box-shadow: none; padding: 3px 10px; }}
-button:hover {{ background: {sel}; color: {bfg}; }}
-button.suggested {{ background: {accent}; color: {dbg}; border-color: {accent}; font-weight: bold; }}
+button {{ background: transparent; color: {fg}; border: 1px solid alpha({fg}, 0.16); border-radius: 6px; box-shadow: none; padding: 5px 10px; min-height: 24px; font-weight: 500; }}
+button:hover {{ background: alpha({fg}, 0.07); color: {bfg}; }}
+button:focus-visible {{ outline: 1px solid {accent}; outline-offset: 2px; }}
+button.suggested {{ background: alpha({accent}, 0.14); color: {accent}; border-color: alpha({accent}, 0.35); font-weight: 600; }}
 button.destructive {{ color: {red}; border-color: {red}; background: transparent; }}
 button.destructive:hover {{ background: {red}; color: {dbg}; }}
 button.flat {{ border-color: transparent; background: transparent; }}
@@ -127,13 +128,11 @@ togglebutton:checked, button:checked {{ background: {sel}; color: {bfg}; border-
 checkbutton {{ color: {fg}; }}
 scrollbar {{ background: transparent; }}
 scrollbar slider {{ background: {muted}; border-radius: 6px; min-width: 6px; }}
-popover > contents {{ background: {dbg}; color: {fg}; }}
+popover > contents {{ background: {bg}; color: {fg}; }}
 "#,
         bg = p.background,
         dbg = p.dark_background,
-        lbg = p.lighter_background,
         fg = p.foreground,
-        dfg = p.dark_foreground,
         bfg = p.bright_foreground,
         sel = p.selection,
         muted = p.muted,

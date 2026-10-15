@@ -78,17 +78,17 @@ impl Ui {
         toolbar.add_css_class("toolbar");
         let brand = gtk::Label::new(Some("Cloud Calendar"));
         brand.add_css_class("brand");
-        let prev = gtk::Button::with_label("◀");
+        let prev = gtk::Button::from_icon_name("go-previous-symbolic");
         let today = gtk::Button::with_label("Today");
-        let next = gtk::Button::with_label("▶");
+        let next = gtk::Button::from_icon_name("go-next-symbolic");
         let period = gtk::Label::new(None);
         period.add_css_class("period");
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         spacer.set_hexpand(true);
         let agenda = gtk::ToggleButton::with_label("Agenda");
-        let reload = gtk::Button::with_label("Reload");
-        let accounts = gtk::Button::with_label("Accounts");
-        let add = gtk::Button::with_label("+ New event");
+        let reload = gtk::Button::from_icon_name("view-refresh-symbolic");
+        let accounts = gtk::Button::from_icon_name("preferences-system-symbolic");
+        let add = gtk::Button::with_label("New event");
         add.add_css_class("suggested");
         for w in [
             brand.upcast_ref::<gtk::Widget>(),
@@ -104,6 +104,7 @@ impl Ui {
         ] {
             toolbar.append(w);
         }
+        accounts.set_tooltip_text(Some("Manage accounts"));
         prev.set_tooltip_text(Some("Previous (h)"));
         next.set_tooltip_text(Some("Next (l)"));
         today.set_tooltip_text(Some("Today (t)"));
