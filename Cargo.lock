@@ -389,6 +389,7 @@ dependencies = [
  "cloud-calendar-api",
  "dirs",
  "gtk4",
+ "serde_json",
  "toml",
 ]
 

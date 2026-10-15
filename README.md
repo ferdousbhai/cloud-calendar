@@ -253,3 +253,9 @@ the one-liner on both architectures.
 ## License
 
 MIT
+
+## Optional Recall search
+
+Use `~ QUERY` in the Calendar search field. Only events loaded for the selected account and period are ranked.
+
+Recall is an optional extra. Normal operation never contacts it. Missing, incompatible, busy, or warming-up Recall leaves event text search available. Requests run in the background with a bounded wait. This project does not install Recall, download embedding weights, or start its own model runtime. When enabled, the owner-local Recall service owns one shared model cache and inference worker; records stay on this machine.

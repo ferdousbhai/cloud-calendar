@@ -11,3 +11,4 @@ chrono.workspace = true
 dirs.workspace = true
 toml.workspace = true
 gtk = { version = "0.11", package = "gtk4", features = ["v4_16"] }
+serde_json.workspace = true

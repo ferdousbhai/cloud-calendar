@@ -1,5 +1,6 @@
 mod accounts;
 mod editor;
+mod recall_client;
 mod theme;
 mod ui;
 

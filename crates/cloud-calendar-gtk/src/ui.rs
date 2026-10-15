@@ -26,6 +26,10 @@ pub struct Ui {
     warning: gtk::Label,
     content: gtk::ScrolledWindow,
     agenda: gtk::ToggleButton,
+    search: gtk::SearchEntry,
+    search_hint: gtk::Label,
+    events: RefCell<Vec<Event>>,
+    search_generation: Cell<u64>,
     state: RefCell<State>,
     /// The linked accounts, read again after any account change.
     pub calendars: RefCell<Option<Calendars>>,
@@ -120,6 +124,17 @@ impl Ui {
 
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.append(&toolbar);
+        let search = gtk::SearchEntry::builder()
+            .placeholder_text("Search this period · ~ meaning")
+            .margin_start(16)
+            .margin_end(16)
+            .margin_top(10)
+            .margin_bottom(10)
+            .build();
+        root.append(&search);
+        let search_hint = label("", "dim");
+        search_hint.set_visible(false);
+        root.append(&search_hint);
         root.append(&warning);
         root.append(&content);
         window.set_child(Some(&root));
@@ -130,6 +145,10 @@ impl Ui {
             warning,
             content,
             agenda,
+            search,
+            search_hint,
+            events: RefCell::new(Vec::new()),
+            search_generation: Cell::new(0),
             state: RefCell::new(State {
                 anchor: Local::now().date_naive(),
                 agenda: false,
@@ -143,6 +162,11 @@ impl Ui {
             on_writable: RefCell::new(None),
         });
 
+        ui.search.connect_search_changed(glib::clone!(
+            #[weak]
+            ui,
+            move |_| ui.filter_events()
+        ));
         prev.connect_clicked(glib::clone!(
             #[weak]
             ui,
@@ -299,6 +323,12 @@ impl Ui {
     /// Reads the shown week (or agenda) again from every account, and the calendars too until a
     /// read of them answered for every account.
     pub fn reload(self: &Rc<Self>) {
+        self.events.borrow_mut().clear();
+        self.search_generation.set(self.search_generation.get() + 1);
+        if self.search.text().starts_with('~') {
+            self.show_filtered(&[]);
+            self.search_hint.set_text("Refreshing this period…");
+        }
         if !self.calendars_complete.get() {
             self.load_calendars();
         }
@@ -346,12 +376,71 @@ impl Ui {
             let warnings: Vec<String> = listing.warnings.iter().map(|w| w.message.clone()).collect();
             ui.warning.set_text(&warnings.join("\n"));
             ui.warning.set_visible(!warnings.is_empty());
-            if agenda {
-                ui.show_agenda(&listing.items, &range)
-            } else {
-                ui.show_week(&listing.items)
+            *ui.events.borrow_mut() = listing.items;
+            ui.filter_events();
+        });
+    }
+
+    fn filter_events(self: &Rc<Self>) {
+        let raw = self.search.text().to_string();
+        let semantic = raw.starts_with('~');
+        let query = raw.trim_start_matches('~').trim().to_string();
+        let events = self.events.borrow().clone();
+        let generation = self.search_generation.get() + 1;
+        self.search_generation.set(generation);
+        let matching: Vec<_> = events
+            .iter()
+            .filter(|event| {
+                query.is_empty()
+                    || serde_json::to_string(event)
+                        .unwrap_or_default()
+                        .to_lowercase()
+                        .contains(&query.to_lowercase())
+            })
+            .cloned()
+            .collect();
+        self.show_filtered(&matching);
+        self.search_hint.set_visible(semantic && !query.is_empty());
+        if !semantic || query.is_empty() {
+            return;
+        }
+        self.search_hint.set_text("Searching this period with local Recall…");
+        let records: Vec<_> = events.iter().map(|event| serde_json::json!({"id":event.id,"title":event.title,"text":serde_json::to_string(event).unwrap_or_default().chars().take(4000).collect::<String>()})).collect();
+        let ui = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let ranked =
+                gio::spawn_blocking(move || crate::recall_client::rank("cloud-calendar", &query, &records, 10))
+                    .await
+                    .ok()
+                    .flatten();
+            let Some(ui) = ui.upgrade() else { return };
+            if ui.search_generation.get() != generation {
+                return;
+            }
+            match ranked {
+                Some(ids) => {
+                    let hits: Vec<_> = ids
+                        .iter()
+                        .filter_map(|id| events.iter().find(|event| &event.id == id).cloned())
+                        .collect();
+                    ui.show_filtered(&hits);
+                    ui.search_hint
+                        .set_text("Semantic matches in this period · local Recall");
+                }
+                None => ui
+                    .search_hint
+                    .set_text("Recall unavailable or warming up · showing text matches"),
             }
         });
+    }
+    fn show_filtered(self: &Rc<Self>, events: &[Event]) {
+        if self.state.borrow().agenda {
+            if let Ok(range) = self.range() {
+                self.show_agenda(events, &range);
+            }
+        } else {
+            self.show_week(events);
+        }
     }
 
     fn event_button(self: &Rc<Self>, e: &Event, show_day: bool) -> gtk::Button {
