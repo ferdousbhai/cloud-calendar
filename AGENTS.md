@@ -21,7 +21,7 @@ event notifications through `omarchy-notification-send`. Calendar sibling of clo
 - `packaging/aur/cloud-calendar/PKGBUILD` — the package (both binaries + systemd user units).
   `packaging/systemd/` — `cloud-calendar-notify.{service,timer}` (runs `cloud-calendar notify`
   every minute). `packaging/repo/` — the signed-repo `install.sh` and its tests.
-- `bin/build-package <arch>` — native, unsigned package build in an Arch container (CI uses it);
+- `bin/build-package <arch>` — native, unsigned package build; `bin/arch-run` wraps it in a disposable Arch chroot for CI;
   `bin/release <version>` — maintainer-only signing and publishing; `bin/verify-release`.
 
 ## Commands
@@ -31,7 +31,8 @@ bin/check                        # rustfmt, clippy -D warnings, tests, installer
 git config core.hooksPath .githooks   # once per clone (NO_CHECK=1 skips the hook)
 cargo build --release            # target/release/cloud-calendar and cloud-calendar-gtk
 bash packaging/repo/test.sh && python3 packaging/repo/test_arch.py   # installer tests (in bin/check)
-bin/build-package x86_64         # full package build in Docker, needs a native runner
+bin/build-package "$(uname -m)"  # full package build as a regular Arch user
+sudo bin/arch-run bin/build-package "$(uname -m)" /output  # disposable native Arch chroot
 ```
 
 CLI tests need `dbus-daemon`; they never touch a real account, keyring, bus or desktop. The fakes

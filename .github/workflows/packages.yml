@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash packaging/repo/test.sh
       - run: python3 packaging/repo/test_arch.py
-      - run: bash -n bin/build-package bin/release bin/verify-release
+      - run: bash -n bin/build-package bin/arch-run bin/release bin/verify-release
   build:
     strategy:
       fail-fast: false
@@ -34,15 +34,12 @@ jobs:
           key: native-${{ matrix.arch }}-${{ hashFiles('Cargo.lock', 'packaging/aur/cloud-calendar/PKGBUILD') }}
           restore-keys: |
             native-${{ matrix.arch }}-
-      - name: Prepare native Arch Linux ARM image
-        if: matrix.arch == 'aarch64'
+      - name: Install Arch chroot tools
         run: |
-          curl --fail --location --retry 3 https://ca.us.mirror.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz -o /tmp/archlinuxarm.tar.gz
-          docker import /tmp/archlinuxarm.tar.gz cloud-calendar-archlinuxarm:ci
+          sudo apt-get update
+          sudo apt-get install -y arch-install-scripts zstd
       - name: Build and test native package
-        env:
-          ARM_BUILD_IMAGE: cloud-calendar-archlinuxarm:ci
-        run: bin/build-package '${{ matrix.arch }}'
+        run: sudo bin/arch-run bin/build-package '${{ matrix.arch }}' /output
       - uses: actions/upload-artifact@v4
         with:
           name: cloud-calendar-${{ matrix.arch }}

@@ -24,6 +24,6 @@ cargo test --locked "${crates[@]}"
 step "packaging"
 bash packaging/repo/test.sh
 python3 packaging/repo/test_arch.py
-bash -n bin/build-package bin/release bin/verify-release .githooks/pre-push
+bash -n bin/arch-run packaging/aur/cloud-calendar/PKGBUILD bin/build-package bin/release bin/verify-release .githooks/pre-push
 
 printf '\nAll checks passed.\n'

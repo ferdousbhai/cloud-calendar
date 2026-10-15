@@ -66,50 +66,65 @@ class InstallerTests(unittest.TestCase):
 
 
 class VerificationTests(unittest.TestCase):
-    def test_exact_release_and_native_arm_image(self):
+    def test_exact_release_and_native_architecture(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            (root / 'bin').mkdir()
+            (root / 'bin/verify-release').write_text((ROOT / 'bin/verify-release').read_text())
             executable(root / 'uname', 'echo aarch64\n')
-            executable(root / 'docker', 'printf "%s\\n" "$@" > "$CALL_LOG"\n')
+            executable(root / 'bin/arch-run', 'printf "%s\\0" "$@" > "$CALL_LOG"\n')
             log = root / 'args'
-            env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', CALL_LOG=str(log), ARM_BUILD_IMAGE='test-arm:latest')
-            subprocess.run(['bash', str(ROOT / 'bin/verify-release'), '0.4.2', 'aarch64'], env=env, check=True)
-            args = log.read_text()
+            env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', CALL_LOG=str(log))
+            subprocess.run(['bash', str(root / 'bin/verify-release'), '0.4.2', 'aarch64'], env=env, check=True)
+            args = log.read_bytes().decode().split('\0')[:-1]
             self.assertIn('CLOUD_CALENDAR_RELEASES_URL=https://github.com/ferdousbhai/cloud-calendar/releases/download/v0.4.2', args)
-            self.assertNotIn('releases/latest', args)
-            self.assertIn('test-arm:latest', args)
-            self.assertIn('linux/arm64', args)
+            self.assertIn('EXPECTED_ARCH=aarch64', args)
+            self.assertNotIn('releases/latest', '\n'.join(args))
+            subprocess.run(['bash', '-n'], input=args[-1], text=True, check=True)
             log.unlink()
-            result = subprocess.run(['bash', str(ROOT / 'bin/verify-release'), '0.4.2', 'x86_64'], env=env, capture_output=True)
+            result = subprocess.run(['bash', str(root / 'bin/verify-release'), '0.4.2', 'x86_64'], env=env, capture_output=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(log.exists())
 
 
 class PackageBuildTests(unittest.TestCase):
-    def test_native_build_mounts_persistent_caches(self):
+    def test_committed_source_cache_and_provenance(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            executable(root / 'uname', 'echo aarch64\n')
-            executable(root / 'docker', 'printf "%s\\0" "$@" > "$CALL_LOG"\n')
-            log = root / 'args'
-            cache = root / 'package cache'
-            env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', CALL_LOG=str(log),
-                       ARM_BUILD_IMAGE='test-arm:latest', PACKAGE_CACHE=str(cache))
-            subprocess.run(['bash', str(ROOT / 'bin/build-package'), 'aarch64', str(root / 'output')],
-                           env=env, check=True)
-            args = log.read_bytes().decode().split('\0')[:-1]
-            self.assertIn(f'{cache}/pacman:/var/cache/pacman/pkg', args)
-            self.assertIn(f'{cache}/cargo:/cargo', args)
-            self.assertIn('CARGO_HOME=/cargo', args)
-            self.assertIn('CARGO_TARGET_DIR=/cargo/target', args)
-            self.assertIn('test-arm:latest', args)
-            self.assertTrue((cache / 'cargo').is_dir())
-            subprocess.run(['bash', '-n'], input=args[-1], text=True, check=True)
-            log.unlink()
-            result = subprocess.run(['bash', str(ROOT / 'bin/build-package'), 'x86_64'],
-                                    env=env, capture_output=True)
+            (root / 'bin').mkdir()
+            (root / 'packaging/aur/cloud-calendar').mkdir(parents=True)
+            (root / 'bin/build-package').write_text((ROOT / 'bin/build-package').read_text())
+            (root / 'Cargo.toml').write_text('version = "0.4.2"\n')
+            recipe = root / 'packaging/aur/cloud-calendar/PKGBUILD'
+            recipe.write_text('source=(original)\nsha256sums=(SKIP)\n')
+            for args in (['init', '-q'], ['add', '.'], ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'fixture']):
+                subprocess.run(['git', *args], cwd=root, check=True)
+            commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
+            recipe.write_text('uncommitted recipe must not be built\n')
+            mocks = root / 'mocks'
+            mocks.mkdir()
+            executable(mocks / 'uname', 'echo aarch64\n')
+            executable(mocks / 'cargo', 'exit 0\n')
+            executable(mocks / 'makepkg', '''
+grep -qx 'source=(source.tar.gz)' PKGBUILD
+sum=$(sha256sum source.tar.gz | cut -d" " -f1)
+grep -qx "sha256sums=('$sum')" PKGBUILD
+tar -tzf source.tar.gz | grep -qx cloud-calendar-0.4.2/Cargo.toml
+mkdir -p "$CARGO_TARGET_DIR/release"
+printf '#!/bin/sh\\necho cloud-calendar 0.4.2\\n' > "$CARGO_TARGET_DIR/release/cloud-calendar"
+chmod +x "$CARGO_TARGET_DIR/release/cloud-calendar"
+printf 'pkgname = cloud-calendar\\npkgver = 0.4.2-1\\narch = aarch64\\n' > .PKGINFO
+tar -czf "$PKGDEST/cloud-calendar-0.4.2-1-aarch64.pkg.tar.zst" .PKGINFO
+''')
+            executable(mocks / 'bsdtar', 'exec tar "$@"\n')
+            cache = root / 'compiler cache'
+            output = root / 'output'
+            env = dict(os.environ, PATH=f'{mocks}:{os.environ["PATH"]}', CARGO_TARGET_DIR=str(cache))
+            subprocess.run(['bash', str(root / 'bin/build-package'), 'aarch64', str(output)], env=env, check=True)
+            self.assertEqual((output / 'source-commit.txt').read_text().strip(), commit)
+            self.assertTrue((cache / 'release/cloud-calendar').is_file())
+            result = subprocess.run(['bash', str(root / 'bin/build-package'), 'x86_64'], env=env, capture_output=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertFalse(log.exists())
 
 
 class ReleaseTests(unittest.TestCase):

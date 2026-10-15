@@ -1,54 +1,35 @@
 #!/usr/bin/env bash
-# Build an unsigned package natively; release signing stays on the maintainer's machine.
+# Build committed source with native Arch tools; signing stays on the maintainer's machine.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 architecture=${1:?usage: bin/build-package <x86_64|aarch64> [output-directory]}
-case "$architecture" in
-  x86_64) image=archlinux:base-devel; platform=linux/amd64 ;;
-  aarch64) image=${ARM_BUILD_IMAGE:?Set ARM_BUILD_IMAGE to a native Arch Linux ARM image}; platform=linux/arm64 ;;
-  *) echo "Unsupported architecture: $architecture" >&2; exit 1 ;;
-esac
+case "$architecture" in x86_64|aarch64) ;; *) echo "Unsupported architecture: $architecture" >&2; exit 1 ;; esac
 [[ $(uname -m) == "$architecture" ]] || { echo 'A native runner is required.' >&2; exit 1; }
-version=$(git show HEAD:Cargo.toml | sed -n 's/^version = "\(.*\)"$/\1/p' | head -1)
+if (( EUID == 0 )); then
+  [[ ${CLOUD_CALENDAR_ARCH_ROOT:-} == 1 ]] || { echo 'Run as a regular Arch user, or through bin/arch-run.' >&2; exit 1; }
+  pacman -S --needed --noconfirm base-devel cargo git gtk4 dbus
+  exec runuser -u builder -- "$PWD/bin/build-package" "$@"
+fi
+for tool in makepkg cargo bsdtar; do
+  command -v "$tool" >/dev/null || { echo "Native Arch build requires $tool on PATH." >&2; exit 1; }
+done
+version=$(git -c safe.directory="$PWD" show HEAD:Cargo.toml | sed -n 's/^version = "\(.*\)"$/\1/p' | head -1)
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 output=$(realpath -m "${2:-target/packages/$architecture}")
-# The container is discarded. A cache left only on the host never reaches pacman or Cargo.
-cache=$(realpath -m "${PACKAGE_CACHE:-$PWD/target/package-cache/$architecture}")
-mkdir -p "$output" "$cache/pacman" "$cache/cargo"
-docker run --rm --platform "$platform" -e BUILD_ARCH="$architecture" -e BUILD_VERSION="$version" \
-  -e OUTPUT_UID="$(id -u)" -e OUTPUT_GID="$(id -g)" \
-  -e CARGO_HOME=/cargo -e CARGO_TARGET_DIR=/cargo/target \
-  -v "$PWD:/source:ro" -v "$output:/output" \
-  -v "$cache/pacman:/var/cache/pacman/pkg" \
-  -v "$cache/cargo:/cargo" \
-  "$image" bash -euo pipefail -c '
-    [[ $(uname -m) == "$BUILD_ARCH" ]]
-    sed -i "/^\[options\]$/a DisableSandbox" /etc/pacman.conf
-    pacman-key --init
-    if [[ $BUILD_ARCH == aarch64 ]]; then pacman-key --populate archlinuxarm; else pacman-key --populate archlinux; fi
-    pacman -Syu --needed --noconfirm base-devel cargo git gtk4 dbus
-    git config --global --add safe.directory /source
-    git config --global --add safe.directory /source/.git
-    commit=$(git -C /source rev-parse HEAD)
-    mkdir /build
-    git -C /source archive --prefix="cloud-calendar-$BUILD_VERSION/" HEAD | gzip -n > /build/source.tar.gz
-    git -C /source show HEAD:packaging/aur/cloud-calendar/PKGBUILD > /build/PKGBUILD
-    sum=$(sha256sum /build/source.tar.gz | cut -d" " -f1)
-    sed -i -e "s|^source=.*|source=(source.tar.gz)|" -e "s/^sha256sums=.*/sha256sums=(\x27$sum\x27)/" /build/PKGBUILD
-    if ! id "$OUTPUT_UID" >/dev/null 2>&1; then
-      getent group "$OUTPUT_GID" >/dev/null || groupadd -g "$OUTPUT_GID" builder
-      useradd -u "$OUTPUT_UID" -g "$OUTPUT_GID" -m builder
-    fi
-    builder=$(id -nu "$OUTPUT_UID")
-    mkdir -p /cargo/target
-    chown -R "$builder:$OUTPUT_GID" /build /output /cargo
-    su "$builder" -c "export CARGO_HOME=/cargo CARGO_TARGET_DIR=/cargo/target; cd /build && PKGDEST=/output PKGEXT=.pkg.tar.zst makepkg --force"
-    package=/output/cloud-calendar-$BUILD_VERSION-1-$BUILD_ARCH.pkg.tar.zst
-    info=$(bsdtar -xOf "$package" .PKGINFO)
-    grep -qxF "pkgname = cloud-calendar" <<< "$info"
-    grep -qxF "pkgver = $BUILD_VERSION-1" <<< "$info"
-    grep -qxF "arch = $BUILD_ARCH" <<< "$info"
-    [[ $(/cargo/target/release/cloud-calendar --version) == "cloud-calendar $BUILD_VERSION" ]]
-    printf "%s\n" "$commit" > /output/source-commit.txt
-    chown -R "$OUTPUT_UID:$OUTPUT_GID" /output /cargo /var/cache/pacman/pkg
-  '
+export CARGO_TARGET_DIR=$(realpath -m "${CARGO_TARGET_DIR:-$PWD/target/package-cache/$architecture/compiler}")
+mkdir -p "$output" "$CARGO_TARGET_DIR"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+commit=$(git -c safe.directory="$PWD" rev-parse HEAD)
+git -c safe.directory="$PWD" archive --prefix="cloud-calendar-$version/" "$commit" | gzip -n > "$work/source.tar.gz"
+git -c safe.directory="$PWD" show "$commit":packaging/aur/cloud-calendar/PKGBUILD > "$work/PKGBUILD"
+sum=$(sha256sum "$work/source.tar.gz" | cut -d" " -f1)
+sed -i -e 's|^source=.*|source=(source.tar.gz)|' -e "s/^sha256sums=.*/sha256sums=('$sum')/" "$work/PKGBUILD"
+(cd "$work" && PKGDEST="$output" PKGEXT=.pkg.tar.zst makepkg --force)
+package="$output/cloud-calendar-$version-1-$architecture.pkg.tar.zst"
+info=$(bsdtar -xOf "$package" .PKGINFO)
+grep -qxF 'pkgname = cloud-calendar' <<< "$info"
+grep -qxF "pkgver = $version-1" <<< "$info"
+grep -qxF "arch = $architecture" <<< "$info"
+[[ $("$CARGO_TARGET_DIR/release/cloud-calendar" --version) == "cloud-calendar $version" ]]
+printf '%s\n' "$commit" > "$output/source-commit.txt"
