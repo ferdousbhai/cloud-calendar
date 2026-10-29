@@ -422,31 +422,17 @@ impl Provider for Hey {
         if days.last() != Some(&last) {
             days.push(last);
         }
-        let results: Vec<Result<Value>> = std::thread::scope(|s| {
-            let handles: Vec<_> = days
-                .iter()
-                .map(|d| {
-                    s.spawn(move || {
-                        self.run(&Self::args(&[
-                            "event",
-                            "week",
-                            &d.format("%Y-%m-%d").to_string(),
-                            "--all",
-                        ]))
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| {
-                    h.join()
-                        .unwrap_or_else(|_| Err(self.fail(ErrorKind::AccountUnavailable, "failed unexpectedly")))
-                })
-                .collect()
+        let results = crate::concurrency::map(&days, |d| {
+            self.run(&Self::args(&[
+                "event",
+                "week",
+                &d.format("%Y-%m-%d").to_string(),
+                "--all",
+            ]))
         });
         let (mut out, mut seen) = (Vec::new(), HashSet::new());
         for r in results {
-            let data = r?;
+            let data = r.unwrap_or_else(|_| Err(self.fail(ErrorKind::AccountUnavailable, "failed unexpectedly")))?;
             let rows = data.as_array().ok_or_else(|| {
                 self.fail(
                     ErrorKind::AccountUnavailable,

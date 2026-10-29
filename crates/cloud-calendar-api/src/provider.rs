@@ -202,6 +202,7 @@ pub(crate) enum Run {
 
 /// Runs a prepared command (stdout and stderr piped, stdin fed when given), killing it after `timeout`.
 pub(crate) fn run_command(cmd: &mut Command, stdin: Option<&str>, timeout: Duration) -> Run {
+    let _permit = crate::concurrency::permit();
     cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

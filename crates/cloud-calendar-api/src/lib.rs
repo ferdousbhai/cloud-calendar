@@ -3,6 +3,7 @@
 //! CLI and GTK app.
 
 pub mod accounts;
+mod concurrency;
 pub mod config;
 pub mod error;
 pub mod google;

@@ -528,22 +528,10 @@ impl Provider for Google {
             .filter(|c| c["selected"] == json!(true))
             .filter_map(|c| self.to_calendar(c))
             .collect();
-        let results: Vec<Result<Vec<Event>>> = std::thread::scope(|s| {
-            let handles: Vec<_> = cals
-                .iter()
-                .map(|c| s.spawn(move || self.calendar_events(c, range)))
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| {
-                    h.join()
-                        .unwrap_or_else(|_| Err(self.fail(ErrorKind::AccountUnavailable, "failed unexpectedly")))
-                })
-                .collect()
-        });
+        let results = crate::concurrency::map(&cals, |c| self.calendar_events(c, range));
         let mut out = Vec::new();
         for r in results {
-            out.extend(r?);
+            out.extend(r.unwrap_or_else(|_| Err(self.fail(ErrorKind::AccountUnavailable, "failed unexpectedly")))?);
         }
         Ok(out)
     }

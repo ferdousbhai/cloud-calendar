@@ -69,57 +69,45 @@ impl Calendars {
     }
 
     fn each<T: Send>(&self, f: impl Fn(&dyn Provider) -> Result<Vec<T>> + Sync) -> Listing<T> {
-        let results: Vec<(String, Result<Vec<T>>)> = std::thread::scope(|s| {
-            let handles: Vec<_> = self
-                .accounts
-                .iter()
-                .map(|p| (p.name().to_string(), s.spawn(|| f(p.as_ref()))))
-                .collect();
-            handles
-                .into_iter()
-                .map(|(name, h)| {
-                    let r = h.join().unwrap_or_else(|_| {
-                        Err(Error::new(
-                            ErrorKind::AccountUnavailable,
-                            format!("{name}: failed unexpectedly"),
-                        ))
-                    });
-                    (name, r)
-                })
-                .collect()
-        });
+        let results = crate::concurrency::map(&self.accounts, |p| f(p.as_ref()));
         let mut out = Listing {
             items: Vec::new(),
             warnings: self.broken.clone(),
         };
-        for (name, r) in results {
-            match r {
+        for (account, result) in self.accounts.iter().zip(results) {
+            let name = account.name();
+            let result = result.unwrap_or_else(|_| {
+                Err(Error::new(
+                    ErrorKind::AccountUnavailable,
+                    format!("{name}: failed unexpectedly"),
+                ))
+            });
+            match result {
                 Ok(items) => out.items.extend(items),
-                Err(e) => out.warnings.push(AccountWarning::new(&name, &e)),
+                Err(e) => out.warnings.push(AccountWarning::new(name, &e)),
             }
         }
         out
     }
 
     pub fn statuses(&self) -> Vec<AccountStatus> {
-        std::thread::scope(|s| {
-            let handles: Vec<_> = self.accounts.iter().map(|p| s.spawn(|| p.status())).collect();
-            handles.into_iter().filter_map(|h| h.join().ok()).collect()
-        })
+        crate::concurrency::map(&self.accounts, |p| p.status())
+            .into_iter()
+            .filter_map(|r| r.ok())
+            .collect()
     }
 
     pub fn calendars(&self) -> Listing<Calendar> {
         let mut l = self.each(|p| p.calendars());
-        l.items.sort_by(|a, b| {
-            (a.account.as_str(), a.name.to_lowercase()).cmp(&(b.account.as_str(), b.name.to_lowercase()))
-        });
+        l.items
+            .sort_by_cached_key(|c| (c.account.clone(), c.name.to_lowercase()));
         l
     }
 
     /// Events in the range across every account, in start order.
     pub fn events(&self, range: &Range) -> Listing<Event> {
         let mut l = self.each(|p| p.events(range));
-        l.items.sort_by_key(Event::sort_key);
+        l.items.sort_by_cached_key(Event::sort_key);
         l
     }
 
