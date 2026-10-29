@@ -1,6 +1,6 @@
 # Maintainer: Ferdous Bhai <23114244+ferdousbhai@users.noreply.github.com>
 pkgname=cloud-calendar
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Your iCloud, Google and HEY calendars in one place on Omarchy (CLI + GTK app)"
 arch=('x86_64' 'aarch64')
