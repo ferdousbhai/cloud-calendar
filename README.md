@@ -24,6 +24,14 @@ own notification system. It is the calendar sibling of [cloud-mail](https://gith
 
 ## Install
 
+Coming from a Mac? One command installs this together with the other iCloud apps (Mail, Calendar, Contacts, Reminders, Notes, Photos and Find My) and signs you in to iCloud once for all of them ([what it does](https://ferdousbhai.com/icloud)):
+
+```sh
+curl -fsSL https://ferdousbhai.com/icloud/install.sh | sudo bash
+```
+
+To install only this app:
+
 On Omarchy or Arch Linux (x86_64 and aarch64), from the signed package repository once a release
 is published:
 
