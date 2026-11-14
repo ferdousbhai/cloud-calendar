@@ -485,7 +485,7 @@ impl Provider for Hey {
         let (target, occurrence, day) = self.target(id)?;
         if occurrence {
             return Err(Error::bad_request(
-                "HEY: a repeating HEY event can't be changed here yet (the hey CLI finds a series by the day it began, which the week listing doesn't give); change it in HEY",
+                "HEY: a repeating HEY event can't be changed here yet; change it in HEY",
             ));
         }
         let mut args = Self::args(&["event", "edit", &target]);

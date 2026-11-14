@@ -369,69 +369,107 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         ed.text().to_string(),
         et.text().to_string(),
     ];
-    save.connect_clicked(glib::clone!(#[strong] run, #[weak] ui, #[weak] title, #[weak] all_day, #[weak] sd, #[weak] st, #[weak] ed, #[weak] et, #[weak] location, #[weak] notes, #[weak] calendar, #[weak] error, move |_| {
-        let buf = notes.buffer();
-        let notes_text = buf.text(&buf.start_iter(), &buf.end_iter(), false).trim().to_string();
-        let title_text = title.text().trim().to_string();
-        let location_text = location.text().trim().to_string();
-        // The accounts as they are now: one may have been linked or removed since this opened.
-        let Some(cals) = ui.calendars.borrow().clone() else {
-            return error.set_text("No accounts are linked any more; your entries are kept.");
-        };
-        match &original {
-            None => {
-                let writable = ui.writable.borrow();
-                if writable.is_empty() {
-                    return error.set_text("No calendar you can add to has loaded yet; your entries are kept, so try Save again in a moment.");
-                }
-                let Some(cal) = writable.get(calendar.selected() as usize) else {
-                    return error.set_text("Pick a calendar.");
-                };
-                let (start, end) = match typed(all_day.is_active(), &sd.text(), &st.text(), &ed.text(), &et.text()) {
-                    Ok(s) => s,
-                    Err(e) => return error.set_text(&e.message),
-                };
-                let new = NewEvent {
-                    calendar_id: cal.id.clone(),
-                    title: title_text,
-                    start,
-                    end,
-                    location: Some(location_text).filter(|l| !l.is_empty()),
-                    notes: Some(notes_text).filter(|n| !n.is_empty()),
-                };
-                run(Box::new(move || cals.create(&new).map(|_| ())));
-            }
-            Some(e) => {
-                let mut change = EventChange::default();
-                if title_text != e.title {
-                    change.title = Some(title_text);
-                }
-                if location_text != e.location.clone().unwrap_or_default() {
-                    change.location = Some(location_text);
-                }
-                if notes_text != e.notes.clone().unwrap_or_default() {
-                    change.notes = Some(notes_text);
-                }
-                let now = [sd.text().to_string(), st.text().to_string(), ed.text().to_string(), et.text().to_string()];
-                let touched = times_touched(shown_all_day, shown_times.each_ref().map(String::as_str), all_day.is_active(), now.each_ref().map(String::as_str));
-                if !e.recurring && touched {
-                    match typed(all_day.is_active(), &sd.text(), &st.text(), &ed.text(), &et.text()) {
-                        Ok((s, t)) if (s, t) != (e.start, e.end) => {
-                            change.start = Some(s);
-                            change.end = Some(t);
-                        }
-                        Ok(_) => {}
-                        Err(err) => return error.set_text(&err.message),
+    save.connect_clicked(glib::clone!(
+        #[strong]
+        run,
+        #[weak]
+        ui,
+        #[weak]
+        title,
+        #[weak]
+        all_day,
+        #[weak]
+        sd,
+        #[weak]
+        st,
+        #[weak]
+        ed,
+        #[weak]
+        et,
+        #[weak]
+        location,
+        #[weak]
+        notes,
+        #[weak]
+        calendar,
+        #[weak]
+        error,
+        move |_| {
+            let buf = notes.buffer();
+            let notes_text = buf.text(&buf.start_iter(), &buf.end_iter(), false).trim().to_string();
+            let title_text = title.text().trim().to_string();
+            let location_text = location.text().trim().to_string();
+            // The accounts as they are now: one may have been linked or removed since this opened.
+            let Some(cals) = ui.calendars.borrow().clone() else {
+                return error.set_text("No accounts are linked any more.");
+            };
+            match &original {
+                None => {
+                    let writable = ui.writable.borrow();
+                    if writable.is_empty() {
+                        return error
+                            .set_text("No calendar you can add to has loaded yet; try Save again in a moment.");
                     }
+                    let Some(cal) = writable.get(calendar.selected() as usize) else {
+                        return error.set_text("Pick a calendar.");
+                    };
+                    let (start, end) = match typed(all_day.is_active(), &sd.text(), &st.text(), &ed.text(), &et.text())
+                    {
+                        Ok(s) => s,
+                        Err(e) => return error.set_text(&e.message),
+                    };
+                    let new = NewEvent {
+                        calendar_id: cal.id.clone(),
+                        title: title_text,
+                        start,
+                        end,
+                        location: Some(location_text).filter(|l| !l.is_empty()),
+                        notes: Some(notes_text).filter(|n| !n.is_empty()),
+                    };
+                    run(Box::new(move || cals.create(&new).map(|_| ())));
                 }
-                if change.is_empty() {
-                    return error.set_text("Nothing changed.");
+                Some(e) => {
+                    let mut change = EventChange::default();
+                    if title_text != e.title {
+                        change.title = Some(title_text);
+                    }
+                    if location_text != e.location.clone().unwrap_or_default() {
+                        change.location = Some(location_text);
+                    }
+                    if notes_text != e.notes.clone().unwrap_or_default() {
+                        change.notes = Some(notes_text);
+                    }
+                    let now = [
+                        sd.text().to_string(),
+                        st.text().to_string(),
+                        ed.text().to_string(),
+                        et.text().to_string(),
+                    ];
+                    let touched = times_touched(
+                        shown_all_day,
+                        shown_times.each_ref().map(String::as_str),
+                        all_day.is_active(),
+                        now.each_ref().map(String::as_str),
+                    );
+                    if !e.recurring && touched {
+                        match typed(all_day.is_active(), &sd.text(), &st.text(), &ed.text(), &et.text()) {
+                            Ok((s, t)) if (s, t) != (e.start, e.end) => {
+                                change.start = Some(s);
+                                change.end = Some(t);
+                            }
+                            Ok(_) => {}
+                            Err(err) => return error.set_text(&err.message),
+                        }
+                    }
+                    if change.is_empty() {
+                        return error.set_text("Nothing changed.");
+                    }
+                    let id = e.id.clone();
+                    run(Box::new(move || cals.update(&id, &change).map(|_| ())));
                 }
-                let id = e.id.clone();
-                run(Box::new(move || cals.update(&id, &change).map(|_| ())));
             }
         }
-    }));
+    ));
 
     let confirming = Rc::new(std::cell::Cell::new(false));
     delete.connect_clicked(glib::clone!(
