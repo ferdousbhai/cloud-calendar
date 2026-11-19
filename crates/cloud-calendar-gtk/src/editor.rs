@@ -292,11 +292,12 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     let cancel = gtk::Button::with_label("Cancel");
     let save = gtk::Button::with_label("Save");
     save.add_css_class("suggested-action");
-    if event.is_some() {
-        delete.set_sensitive(can_delete);
-        save.set_sensitive(can_edit);
-        buttons.append(&delete);
-    }
+    delete.set_sensitive(can_delete);
+    save.set_sensitive(can_edit);
+    // In the window even for a new event, hidden: `run` holds it weakly and does nothing once it is gone, as a button
+    // with no parent is by the time Save is pressed.
+    delete.set_visible(event.is_some());
+    buttons.append(&delete);
     buttons.append(&cancel);
     buttons.append(&save);
     grid.attach(&buttons, 1, row, 1, 1);
@@ -378,7 +379,8 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         location,
         #[weak]
         notes,
-        #[weak]
+        // Strong: an event's editor shows its calendar as a label, so nothing else keeps the list.
+        #[strong]
         calendar,
         #[weak]
         error,
