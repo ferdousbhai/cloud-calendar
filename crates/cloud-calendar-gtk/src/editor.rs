@@ -16,6 +16,15 @@ fn entry(text: &str, placeholder: &str) -> gtk::Entry {
     e
 }
 
+/// A line of text in the fields' column, as wide as that column always: a wrapping label's least height is
+/// measured at its least width, and GTK warns when the window's height comes from a wider one.
+fn note(text: &str, class: &str) -> gtk::Label {
+    let l = omui::label(text, class);
+    l.set_width_chars(50);
+    l.set_max_width_chars(50);
+    l
+}
+
 fn field(grid: &gtk::Grid, row: i32, name: &str, widget: &impl IsA<gtk::Widget>) {
     let l = gtk::Label::new(Some(name));
     l.add_css_class("dim-label");
@@ -95,7 +104,6 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         .title(if event.is_some() { "Event" } else { "New event" })
         .transient_for(&ui.window)
         .modal(true)
-        .default_width(520)
         .build();
     // While a save or delete runs, the editor stays open: closing it would hide the outcome.
     let busy = Rc::new(std::cell::Cell::new(false));
@@ -167,7 +175,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     if let Some(caveat) = event.as_ref().and_then(|e| cals.edit_caveat(&e.id)) {
         let mut caveat = caveat;
         caveat[..1].make_ascii_uppercase();
-        grid.attach(&omui::label(&format!("{caveat}."), "meta"), 1, row, 1, 1);
+        grid.attach(&note(&format!("{caveat}."), "meta"), 1, row, 1, 1);
         row += 1;
     }
     if let Some((support, label)) = &support {
@@ -180,7 +188,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
             ),
             (false, false) => format!("A repeating {label} event can't be changed or deleted here; use {label}."),
         };
-        grid.attach(&omui::label(&text, "meta"), 1, row, 1, 1);
+        grid.attach(&note(&text, "meta"), 1, row, 1, 1);
         row += 1;
     }
     match &event {
@@ -233,7 +241,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         }
     }
     // A new event waits for the calendars it can go on; the list follows when they arrive.
-    let no_calendars = omui::label(
+    let no_calendars = note(
         "No calendar you can add to has loaded yet (still loading, or an account failed: see the warning above the week).",
         "error",
     );
@@ -268,7 +276,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
             }
         ));
     }
-    let error = omui::label("", "error");
+    let error = note("", "error");
     grid.attach(&error, 1, row, 1, 1);
     row += 1;
 
