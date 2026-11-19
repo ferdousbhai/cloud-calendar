@@ -12,9 +12,11 @@ step() { printf '\n==> %s\n' "$*"; }
 
 # The desktop app needs GTK 4; without it only the CLI and the library are checked.
 crates=(--workspace)
+gtk=1
 if ! pkg-config --exists gtk4 2>/dev/null; then
   echo "note: skipping cloud-calendar-gtk (install gtk4 to check it)" >&2
   crates+=(--exclude cloud-calendar-gtk)
+  gtk=0
 fi
 
 step "rustfmt (fix with: cargo fmt --all)"
@@ -24,9 +26,17 @@ cargo clippy --locked "${crates[@]}" --all-targets -- -D warnings
 step "cargo test"
 cargo test --locked "${crates[@]}"
 
+if ((gtk)); then
+  # The app driven through its views, the editor and Accounts on the stand-in accounts, on a private broadway
+  # display; any GTK warning fails it. Only this build has omui's QA in it.
+  step "app QA (dev/qa)"
+  cargo build --locked -p cloud-calendar-gtk --features qa
+  dev/qa.sh "${CARGO_TARGET_DIR:-target}/debug/cloud-calendar-gtk" dev/qa/*.jsonl
+fi
+
 step "packaging"
 bash packaging/repo/test.sh
 python3 packaging/repo/test_arch.py
-bash -n bin/arch-run packaging/aur/cloud-calendar/PKGBUILD bin/build-package bin/release bin/verify-release .githooks/pre-push dev/preview.sh
+bash -n bin/arch-run packaging/aur/cloud-calendar/PKGBUILD bin/build-package bin/release bin/verify-release .githooks/pre-push dev/preview.sh dev/qa.sh
 
 printf '\nAll checks passed.\n'

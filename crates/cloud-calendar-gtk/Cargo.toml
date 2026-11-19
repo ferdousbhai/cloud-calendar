@@ -13,3 +13,7 @@ omui = { git = "https://github.com/ferdousbhai/omui", rev = "84fda37d4df6c0f0f47
 # The GTK 4 omui is built on; cargo resolves both to one gtk4.
 gtk = { version = "0.11", package = "gtk4", features = ["v4_16"] }
 serde_json.workspace = true
+
+[features]
+# omui's scripted QA (dev/qa.sh, run by bin/check); release builds leave it off.
+qa = ["omui/qa"]

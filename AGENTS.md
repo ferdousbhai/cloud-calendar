@@ -33,6 +33,7 @@ bin/check                        # rustfmt, clippy -D warnings, tests, installer
 git config core.hooksPath .githooks   # once per clone (NO_CHECK=1 skips the hook)
 cargo build --release            # target/release/cloud-calendar and cloud-calendar-gtk
 dev/preview.sh week /tmp/week.png  # the app on the fakes in a nested Hyprland, as a screenshot
+cargo build -p cloud-calendar-gtk --features qa && dev/qa.sh target/debug/cloud-calendar-gtk dev/qa/*.jsonl  # in bin/check
 bash packaging/repo/test.sh && python3 packaging/repo/test_arch.py   # installer tests (in bin/check)
 bin/build-package "$(uname -m)"  # full package build as a regular Arch user
 sudo bin/arch-run bin/build-package "$(uname -m)" /output  # disposable native Arch chroot
@@ -41,7 +42,12 @@ sudo bin/arch-run bin/build-package "$(uname -m)" /output  # disposable native A
 CLI tests need `dbus-daemon`; they never touch a real account, keyring, bus or desktop. The fakes
 are selected with `CLOUD_CALENDAR_{HEY,GWS,NOTIFY}_COMMAND`. Look at the app only through
 `dev/preview.sh` (its header lists the scenes and themes): it has a private HOME and D-Bus, so no
-window opens on the desktop and no real account is read.
+window opens on the desktop and no real account is read. `dev/qa/*.jsonl` drive the app on the same
+fakes through omui's scripted QA (feature `qa`, which release builds and the PKGBUILD leave off):
+`dev/qa.sh` runs them on a private broadway display with no session bus, and any GTK warning fails a
+run. Widgets are found by accessible name, so two that look alike get their own
+(`Property::Label`). Shots of the main window go to `CLOUD_CALENDAR_QA_SHOTS`; the editor and
+Accounts are windows of their own, which `shot` does not take, so their pictures are preview.sh's.
 
 ## Conventions and gotchas
 

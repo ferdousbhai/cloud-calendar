@@ -1,0 +1,69 @@
+# The week and the agenda on the stand-in accounts, with the app's own keys: dev/qa.sh runs it (bin/check runs all).
+# `@to-fakes` is dev/qa.sh's: as many `h` as there are weeks back to the fakes' week of 2026-10-12.
+@to-fakes
+{"do":"wait","role":"label","name":"12 Oct – 18 Oct 2026"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"wait","role":"button","name":"Design review · Me (google)","visible":true}
+{"do":"wait","role":"button","name":"Trip · Personal (hey)","visible":true}
+# Google's hidden calendar stays out, and iCloud, which has no icloud-session here, is the warning above the week.
+{"do":"wait","role":"label","name":"● Should not show","visible":false}
+{"do":"wait","role":"label","name":"iCloud: icloud-session failed (Failed to connect to address `unix:path=/nonexistent`: No such file or directory (os error 2))","visible":true}
+{"do":"shot","path":"week.png"}
+
+# l and h move a week, r reads it again; the buttons do the same.
+{"do":"key","keys":"l"}
+{"do":"wait","role":"label","name":"19 Oct – 25 Oct 2026"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":false}
+{"do":"key","keys":"h"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"click","role":"button","name":"Next (l)"}
+{"do":"wait","role":"label","name":"19 Oct – 25 Oct 2026"}
+{"do":"click","role":"button","name":"Previous (h)"}
+{"do":"wait","role":"label","name":"12 Oct – 18 Oct 2026"}
+{"do":"key","keys":"r"}
+{"do":"wait","role":"button","name":"Lunch with Sam · Personal (hey)","visible":true}
+
+# The search narrows the period shown; with ~ it asks Recall, which is not running here, and says so.
+{"do":"type","role":"search-box","name":"Search this period · ~ meaning","text":"lunch"}
+{"do":"wait","role":"button","name":"Lunch with Sam · Personal (hey)","visible":true}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":false}
+{"do":"key","keys":"<Control>a"}
+{"do":"type","text":"~lunch"}
+{"do":"wait","role":"label","name":"Recall unavailable or warming up · showing text matches","visible":true}
+{"do":"wait","role":"button","name":"Lunch with Sam · Personal (hey)","visible":true}
+{"do":"key","keys":"<Control>a"}
+{"do":"key","keys":"BackSpace"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"wait","role":"label","name":"Recall unavailable or warming up · showing text matches","visible":false}
+
+# a switches to the two-week agenda from the day shown; a week back, it starts before the fakes' events.
+{"do":"focus","role":"button","name":"Today"}
+{"do":"key","keys":"h"}
+{"do":"key","keys":"a"}
+{"do":"wait","role":"toggle-button","name":"Agenda","checked":true}
+{"do":"wait","role":"label","name":"Monday 12 October","visible":true}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"wait","role":"label","name":"06:00–07:00 · Personal (hey)","visible":true}
+{"do":"shot","path":"agenda.png"}
+# Fourteen days on, the agenda has none of them.
+{"do":"key","keys":"l"}
+{"do":"wait","role":"label","name":"No events in these two weeks.","visible":true}
+{"do":"key","keys":"a"}
+{"do":"wait","role":"toggle-button","name":"Agenda","checked":false}
+
+# t comes back from the fakes' week to today's, where they have nothing.
+{"do":"key","keys":"t"}
+@to-fakes
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"key","keys":"t"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":false}
+{"do":"wait","role":"label","name":"12 Oct – 18 Oct 2026","visible":false}
+
+# A narrow window: the week's seven columns share what there is, and the toolbar keeps its buttons.
+@to-fakes
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"resize","width":760,"height":620}
+{"do":"wait","size":[760,620]}
+{"do":"wait","role":"button","name":"New event","visible":true}
+{"do":"shot","path":"week-narrow.png"}
+{"do":"quit"}

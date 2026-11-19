@@ -1,0 +1,80 @@
+# The event editor on the stand-in accounts: a new event, a Google event changed and deleted, and a repeating HEY
+# event that can only be deleted. The editor is a modal window of its own; dev/qa.sh runs it (bin/check runs all).
+# `n` opens it too, but omui's `key` waits for its release on the window it was pressed in, and the editor has taken
+# the keyboard by then, so the button is what is pressed here.
+@to-fakes
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+
+# A new event: the title has the keyboard, All day hides the clocks, Escape closes it.
+{"do":"click","role":"button","name":"New event"}
+{"do":"wait","role":"window","name":"New event","visible":true}
+{"do":"wait","role":"text-box","name":"Title","focused":true}
+{"do":"wait","role":"label","name":"Hidden (google)","visible":true}
+{"do":"set","role":"checkbox","name":"All day","checked":true}
+{"do":"wait","role":"text-box","name":"Start time","visible":false}
+{"do":"wait","role":"text-box","name":"End time","visible":false}
+{"do":"set","role":"checkbox","name":"All day","checked":false}
+{"do":"wait","role":"text-box","name":"Start time","visible":true}
+{"do":"key","keys":"Escape"}
+{"do":"wait","role":"window","name":"New event","visible":false}
+
+# Without a start time, or with one after the end, it says so and stays open; then it saves and closes.
+{"do":"click","role":"button","name":"New event"}
+{"do":"wait","role":"text-box","name":"Title","focused":true}
+{"do":"type","text":"Dentist"}
+{"do":"key","keys":"Tab"}
+{"do":"key","keys":"Tab"}
+{"do":"key","keys":"Tab"}
+{"do":"wait","role":"text-box","name":"Start time","focused":true,"text":"09:00"}
+{"do":"key","keys":"<Control>a"}
+{"do":"key","keys":"BackSpace"}
+{"do":"click","role":"button","name":"Save"}
+{"do":"wait","role":"label","name":"Give a start time, or tick All day.","visible":true}
+{"do":"type","role":"text-box","name":"Start time","text":"11:30"}
+{"do":"click","role":"button","name":"Save"}
+{"do":"wait","role":"label","name":"the end (2026-10-12T10:00:00+00:00) must come after the start (2026-10-12T11:30:00+00:00)","visible":true}
+{"do":"focus","role":"text-box","name":"Start time"}
+{"do":"key","keys":"<Control>a"}
+{"do":"type","text":"09:30"}
+{"do":"click","role":"button","name":"Save"}
+{"do":"wait","role":"window","name":"New event","visible":false}
+
+# A Google event: Save with nothing changed says so; a new title saves.
+{"do":"click","role":"button","name":"Design review · Me (google)"}
+{"do":"wait","role":"window","name":"Event","visible":true}
+{"do":"wait","role":"label","name":"Me (google)","visible":true}
+{"do":"wait","role":"text-box","name":"Title","focused":true,"text":"Design review"}
+{"do":"click","role":"button","name":"Save"}
+{"do":"wait","role":"label","name":"Nothing changed.","visible":true}
+{"do":"type","role":"text-box","name":"Title","text":" 2"}
+{"do":"click","role":"button","name":"Save"}
+{"do":"wait","role":"window","name":"Event","visible":false}
+
+# Delete asks once more on the button itself.
+{"do":"click","role":"button","name":"Design review · Me (google)"}
+{"do":"click","role":"button","name":"Delete"}
+{"do":"wait","role":"button","name":"Really delete?","visible":true}
+{"do":"click","role":"button","name":"Really delete?"}
+{"do":"wait","role":"window","name":"Event","visible":false}
+
+# A repeating HEY event: what HEY can't do is said and switched off, and only the series can be deleted.
+{"do":"click","role":"button","name":"Gym · Personal (hey)"}
+{"do":"wait","role":"window","name":"Event","visible":true}
+{"do":"wait","role":"label","name":"A repeating HEY event can't be changed here, only deleted (the whole series); change it in HEY.","visible":true}
+{"do":"wait","role":"text-box","name":"Title","sensitive":false,"text":"Gym"}
+{"do":"wait","role":"checkbox","name":"All day","sensitive":false}
+{"do":"wait","role":"button","name":"Save","sensitive":false}
+{"do":"wait","role":"button","name":"Delete series","sensitive":true}
+{"do":"click","role":"button","name":"Delete series"}
+{"do":"wait","role":"button","name":"Delete every occurrence?","visible":true}
+{"do":"click","role":"button","name":"Cancel"}
+{"do":"wait","role":"window","name":"Event","visible":false}
+
+# A HEY event that does not repeat: its caveat, and every field on.
+{"do":"click","role":"button","name":"Lunch with Sam · Personal (hey)"}
+{"do":"wait","role":"window","name":"Event","visible":true}
+{"do":"wait","role":"text-box","name":"Location","text":"Café","sensitive":true}
+{"do":"wait","role":"button","name":"Save","sensitive":true}
+{"do":"key","keys":"Escape"}
+{"do":"wait","role":"window","name":"Event","visible":false}
+{"do":"quit"}

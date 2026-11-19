@@ -1,0 +1,26 @@
+# The Accounts window on the stand-in accounts: each one's state, removing one, and the way out. dev/qa.sh runs it
+# (bin/check runs all). Sign in and the add buttons are not pressed: they open a browser or iCloud's sign-in.
+{"do":"wait","role":"label","name":"iCloud: icloud-session failed (Failed to connect to address `unix:path=/nonexistent`: No such file or directory (os error 2))","visible":true}
+{"do":"click","role":"button","name":"Manage accounts"}
+{"do":"wait","role":"window","name":"Accounts","visible":true}
+{"do":"wait","role":"label","name":"✓ Google (google)","visible":true}
+{"do":"wait","role":"label","name":"✓ HEY (hey)","visible":true}
+{"do":"wait","role":"label","name":"✗ iCloud (icloud)","visible":true}
+{"do":"wait","role":"button","name":"Sign in to icloud again","sensitive":true}
+{"do":"wait","role":"button","name":"HEY","sensitive":true}
+{"do":"key","keys":"Escape"}
+{"do":"wait","role":"window","name":"Accounts","visible":false}
+
+# Remove asks again on its own button, then the account goes from the list and its warning from the week.
+{"do":"click","role":"button","name":"Manage accounts"}
+{"do":"click","role":"button","name":"Remove icloud"}
+{"do":"wait","role":"button","name":"Really remove icloud?","visible":true}
+{"do":"wait","role":"button","name":"Remove hey","visible":true}
+{"do":"click","role":"button","name":"Really remove icloud?"}
+{"do":"wait","role":"label","name":"✗ iCloud (icloud)","visible":false}
+{"do":"wait","role":"label","name":"✓ HEY (hey)","visible":true}
+{"do":"key","keys":"Escape"}
+{"do":"wait","role":"window","name":"Accounts","visible":false}
+{"do":"wait","role":"label","name":"iCloud: icloud-session failed (Failed to connect to address `unix:path=/nonexistent`: No such file or directory (os error 2))","visible":false}
+{"do":"shot","path":"accounts-removed.png"}
+{"do":"quit"}
