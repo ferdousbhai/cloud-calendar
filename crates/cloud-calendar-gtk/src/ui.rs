@@ -450,7 +450,7 @@ impl Ui {
             .unwrap_or("#888888");
         let title = text("", "");
         title.set_markup(&format!(
-            "<span foreground=\"{dot}\">●</span> {}{}",
+            "<span foreground=\"{dot}\">●</span>\u{a0}{}{}",
             glib::markup_escape_text(&e.title),
             if e.recurring { " ↻" } else { "" }
         ));
