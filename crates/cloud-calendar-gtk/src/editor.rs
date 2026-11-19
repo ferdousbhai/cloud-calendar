@@ -137,6 +137,15 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         entry(&end.0, "YYYY-MM-DD"),
         entry(&end.1, "HH:MM"),
     );
+    // The two rows' entries share their placeholders; a screen reader hears which is which.
+    for (e, name) in [
+        (&sd, "Start date"),
+        (&st, "Start time"),
+        (&ed, "End date"),
+        (&et, "End time"),
+    ] {
+        e.update_property(&[gtk::accessible::Property::Label(name)]);
+    }
     let location = entry(
         event.as_ref().and_then(|e| e.location.as_deref()).unwrap_or(""),
         "Location",

@@ -80,7 +80,10 @@ impl Win {
                 let again = gtk::Button::with_label("Sign in again");
                 let remove = gtk::Button::with_label("Remove");
                 remove.add_css_class("destructive-action");
+                // Each row has the same two buttons; a screen reader hears whose they are.
                 let name = s.name.clone();
+                again.update_property(&[gtk::accessible::Property::Label(&format!("Sign in to {name} again"))]);
+                remove.update_property(&[gtk::accessible::Property::Label(&format!("Remove {name}"))]);
                 again.connect_clicked(glib::clone!(
                     #[strong]
                     win,
@@ -101,6 +104,7 @@ impl Win {
                     move |b| {
                         if !confirming.replace(true) {
                             b.set_label("Really remove?");
+                            b.update_property(&[gtk::accessible::Property::Label(&format!("Really remove {name}?"))]);
                             return;
                         }
                         let name = name.clone();
