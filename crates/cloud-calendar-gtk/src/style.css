@@ -1,0 +1,36 @@
+/* Cloud Calendar's own styles, over omui's stylesheet: the toolbar's text, the week's columns, the agenda, an event,
+   and the two windows of fields. Colours are omui's @om_* tokens, tinted with alpha(); no hex. */
+
+/* The bar is above the week, and lines up with the search field and the agenda under it. */
+.toolbar { border-bottom: 1px solid alpha(@om_border, 0.6); padding: 6px 16px; }
+.toolbar .brand { font-weight: 650; padding-right: 12px; }
+.toolbar .period { font-weight: 650; padding: 0 10px; }
+
+/* The one line shown where the week will be. */
+.status-line { padding: 40px; }
+
+/* ------------------------------------------------------------------------------------------------------- week -- */
+.day { border-right: 1px solid alpha(@om_border, 0.6); padding: 6px; }
+.day.today { background: alpha(@om_accent, 0.035); }
+button.day-head { color: @om_dim_text; font-size: 0.9em; font-weight: 650; padding: 2px 4px 8px; }
+.today button.day-head { color: @om_accent; }
+
+/* ----------------------------------------------------------------------------------------------------- agenda -- */
+.agenda-day { color: @om_accent; font-weight: 650; padding: 14px 16px 4px; }
+.agenda button.event { margin: 2px 16px; padding: 9px 12px; }
+
+/* ------------------------------------------------------------------------------------------------------ event -- */
+button.event {
+  background: alpha(@om_text, 0.025);
+  border-left: 2px solid alpha(@om_accent, 0.65);
+  border-radius: 6px;
+  margin: 2px 0;
+  padding: 7px 8px;
+}
+/* Its lines sit together: omui spaces a button's box for an icon beside a label. */
+button.event > box { border-spacing: 0; }
+button.event:hover { background: alpha(@om_accent, 0.1); border-color: alpha(@om_accent, 0.5); }
+
+/* ------------------------------------------------------------------------------------- the editor and Accounts -- */
+.sheet { padding: 24px; }
+textview.notes { padding: 8px; }

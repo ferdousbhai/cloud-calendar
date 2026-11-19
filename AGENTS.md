@@ -16,8 +16,10 @@ event notifications through `omarchy-notification-send`. Calendar sibling of clo
 - `crates/cloud-calendar` — `cloud-calendar` CLI (clap, `src/cli.rs`; output modes in
   `src/main.rs`, text rendering in `src/render.rs`). `tests/cli.rs` runs the real binary against
   fakes (`tests/fakes/`, `tests/fake-{gws,hey,notify}`).
-- `crates/cloud-calendar-gtk` — GTK4 app (`ui.rs` week/agenda view, `editor.rs`, `accounts.rs`,
-  `theme.rs` reads the Omarchy theme); `data/` holds the .desktop file and icon.
+- `crates/cloud-calendar-gtk` — GTK4 app (`ui.rs` week/agenda view, `editor.rs`, `accounts.rs`). The
+  look, the Omarchy theme, the icons and the shared widgets are omui's (git dependency pinned by
+  `rev` in its `Cargo.toml`); `style.css` holds only the calendar's own rules, on omui's `@om_*`
+  colours. `data/` holds the .desktop file and icon.
 - `packaging/aur/cloud-calendar/PKGBUILD` — the package (both binaries + systemd user units).
   `packaging/systemd/` — `cloud-calendar-notify.{service,timer}` (runs `cloud-calendar notify`
   every minute). `packaging/repo/` — the signed-repo `install.sh` and its tests.
@@ -30,13 +32,16 @@ event notifications through `omarchy-notification-send`. Calendar sibling of clo
 bin/check                        # rustfmt, clippy -D warnings, tests, installer tests; .githooks/pre-push runs it
 git config core.hooksPath .githooks   # once per clone (NO_CHECK=1 skips the hook)
 cargo build --release            # target/release/cloud-calendar and cloud-calendar-gtk
+dev/preview.sh week /tmp/week.png  # the app on the fakes in a nested Hyprland, as a screenshot
 bash packaging/repo/test.sh && python3 packaging/repo/test_arch.py   # installer tests (in bin/check)
 bin/build-package "$(uname -m)"  # full package build as a regular Arch user
 sudo bin/arch-run bin/build-package "$(uname -m)" /output  # disposable native Arch chroot
 ```
 
 CLI tests need `dbus-daemon`; they never touch a real account, keyring, bus or desktop. The fakes
-are selected with `CLOUD_CALENDAR_{HEY,GWS,NOTIFY}_COMMAND`.
+are selected with `CLOUD_CALENDAR_{HEY,GWS,NOTIFY}_COMMAND`. Look at the app only through
+`dev/preview.sh` (its header lists the scenes and themes): it has a private HOME and D-Bus, so no
+window opens on the desktop and no real account is read.
 
 ## Conventions and gotchas
 
@@ -52,6 +57,8 @@ are selected with `CLOUD_CALENDAR_{HEY,GWS,NOTIFY}_COMMAND`.
   nothing secret.
 - Provider limits are deliberate (repeating iCloud events read-only, HEY edits drop countdowns and
   need both start and end); keep the CLI/editor warnings (`edit_side_effects`) in sync with them.
+- The app's binary holds omui's Strata-derived code and Lucide icons: a change of the omui `rev`
+  keeps `THIRD_PARTY_NOTICES.md` (installed by the PKGBUILD) true.
 - Release: bump `version` in the root `Cargo.toml` and `pkgver` in the PKGBUILD together, tag
   `vX.Y.Z`, draft the GitHub release, then `bin/release X.Y.Z` (signing key lives only in the
   maintainer's keyring, never CI). Do not run release scripts unless asked.

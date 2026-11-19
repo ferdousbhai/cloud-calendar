@@ -5,10 +5,11 @@
 use chrono::{Datelike, Local, NaiveDate};
 use cloud_calendar_api::{self as api, Calendar, Calendars, Event, Range, Time};
 use gtk::{gdk, gio, glib, prelude::*};
+use omui::icons::name as icon;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::{editor, theme};
+use crate::editor;
 
 const AGENDA_DAYS: u32 = 14;
 
@@ -55,45 +56,40 @@ fn clock(t: &Time) -> String {
     }
 }
 
-fn label(text: &str, class: &str) -> gtk::Label {
-    let l = gtk::Label::new(Some(text));
-    l.add_css_class(class);
-    l.set_xalign(0.0);
-    l.set_wrap(true);
+/// omui's label, breaking inside a word too long for its line: a week's column is narrow, and a long title or path
+/// would otherwise set its width.
+pub fn text(text: &str, class: &str) -> gtk::Label {
+    let l = omui::label(text, class);
     l.set_wrap_mode(gtk::pango::WrapMode::WordChar);
     l
 }
 
 impl Ui {
     pub fn new(app: &gtk::Application) -> Rc<Self> {
-        let palette = theme::load();
-        theme::apply(&palette);
-        theme::watch(|p| theme::apply(&p));
-
         let window = gtk::ApplicationWindow::builder()
             .application(app)
             .title("Cloud Calendar")
             .default_width(1200)
             .default_height(760)
             .build();
-        window.add_css_class("cloud-calendar");
 
-        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        // omui's `toolbar` spaces its children.
+        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         toolbar.add_css_class("toolbar");
         let brand = gtk::Label::new(Some("Cloud Calendar"));
         brand.add_css_class("brand");
-        let prev = gtk::Button::from_icon_name("go-previous-symbolic");
+        let prev = omui::icon_button(icon::BACK, "Previous (h)");
         let today = gtk::Button::with_label("Today");
-        let next = gtk::Button::from_icon_name("go-next-symbolic");
+        let next = omui::icon_button(icon::FORWARD, "Next (l)");
         let period = gtk::Label::new(None);
         period.add_css_class("period");
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         spacer.set_hexpand(true);
         let agenda = gtk::ToggleButton::with_label("Agenda");
-        let reload = gtk::Button::from_icon_name("view-refresh-symbolic");
-        let accounts = gtk::Button::from_icon_name("preferences-system-symbolic");
+        let reload = omui::icon_button(icon::REFRESH, "Reload (r)");
+        let accounts = omui::icon_button(icon::SETTINGS, "Manage accounts");
         let add = gtk::Button::with_label("New event");
-        add.add_css_class("suggested");
+        add.add_css_class("suggested-action");
         for w in [
             brand.upcast_ref::<gtk::Widget>(),
             prev.upcast_ref(),
@@ -108,15 +104,15 @@ impl Ui {
         ] {
             toolbar.append(w);
         }
-        accounts.set_tooltip_text(Some("Manage accounts"));
-        prev.set_tooltip_text(Some("Previous (h)"));
-        next.set_tooltip_text(Some("Next (l)"));
         today.set_tooltip_text(Some("Today (t)"));
         agenda.set_tooltip_text(Some("Week or agenda (a)"));
-        reload.set_tooltip_text(Some("Reload (r)"));
         add.set_tooltip_text(Some("New event (n)"));
 
-        let warning = label("", "warning");
+        let warning = text("", "error");
+        warning.add_css_class("caption");
+        warning.set_margin_start(16);
+        warning.set_margin_end(16);
+        warning.set_margin_bottom(4);
         warning.set_visible(false);
         let content = gtk::ScrolledWindow::new();
         content.set_vexpand(true);
@@ -132,7 +128,7 @@ impl Ui {
             .margin_bottom(10)
             .build();
         root.append(&search);
-        let search_hint = label("", "dim");
+        let search_hint = text("", "meta");
         search_hint.set_visible(false);
         root.append(&search_hint);
         root.append(&warning);
@@ -334,7 +330,7 @@ impl Ui {
         }
         let range = match self.range() {
             Ok(r) => r,
-            Err(e) => return self.content.set_child(Some(&label(&e.message, "empty"))),
+            Err(e) => return self.content.set_child(Some(&text(&e.message, "status-line"))),
         };
         let (agenda, anchor) = {
             let s = self.state.borrow();
@@ -352,9 +348,9 @@ impl Ui {
             )
         });
         let Some(cals) = self.calendars.borrow().clone() else {
-            let text = label(self.setup_error.borrow().as_deref().unwrap_or(""), "setup");
-            text.set_selectable(true);
-            self.content.set_child(Some(&text));
+            let setup = text(self.setup_error.borrow().as_deref().unwrap_or(""), "status-line");
+            setup.set_selectable(true);
+            self.content.set_child(Some(&setup));
             return;
         };
         let generation = {
@@ -363,7 +359,7 @@ impl Ui {
             s.generation
         };
         if self.content.child().is_none() {
-            self.content.set_child(Some(&label("Loading…", "empty")));
+            self.content.set_child(Some(&text("Loading…", "status-line")));
         }
         let ui = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
@@ -452,16 +448,12 @@ impl Ui {
             .as_deref()
             .filter(|c| c.starts_with('#') && c.len() <= 9)
             .unwrap_or("#888888");
-        let title = gtk::Label::new(None);
+        let title = text("", "");
         title.set_markup(&format!(
             "<span foreground=\"{dot}\">●</span> {}{}",
             glib::markup_escape_text(&e.title),
             if e.recurring { " ↻" } else { "" }
         ));
-        title.add_css_class("title");
-        title.set_xalign(0.0);
-        title.set_wrap(true);
-        title.set_wrap_mode(gtk::pango::WrapMode::WordChar);
         body.append(&title);
         let mut when = if e.all_day {
             let last = e.end.local_date() - chrono::Days::new(1);
@@ -476,9 +468,9 @@ impl Ui {
         if show_day {
             when = format!("{when} · {} ({})", e.calendar, e.account);
         }
-        body.append(&label(&when, "when"));
+        body.append(&text(&when, "meta"));
         if let Some(l) = &e.location {
-            body.append(&label(l, "where"));
+            body.append(&text(l, "meta"));
         }
         b.set_child(Some(&body));
         b.set_tooltip_text(Some(&format!("{} · {} ({})", e.title, e.calendar, e.account)));
@@ -537,13 +529,13 @@ impl Ui {
                 continue;
             }
             any = true;
-            list.append(&label(&day.format("%A %-d %B").to_string(), "agenda-day"));
+            list.append(&text(&day.format("%A %-d %B").to_string(), "agenda-day"));
             for e in todays {
                 list.append(&self.event_button(e, true));
             }
         }
         if !any {
-            list.append(&label("No events in these two weeks.", "empty"));
+            list.append(&text("No events in these two weeks.", "status-line"));
         }
         self.content.set_child(Some(&list));
     }

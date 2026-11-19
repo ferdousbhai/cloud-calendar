@@ -8,7 +8,8 @@ license.workspace = true
 [dependencies]
 cloud-calendar-api.workspace = true
 chrono.workspace = true
-dirs.workspace = true
-toml.workspace = true
+# The look, the icons and the shared widgets, pinned by commit (v0.2.0).
+omui = { git = "https://github.com/ferdousbhai/omui", rev = "ce060c5242e38caa4b3735683fb16c7b2f36fc38" }
+# The GTK 4 omui is built on; cargo resolves both to one gtk4.
 gtk = { version = "0.11", package = "gtk4", features = ["v4_16"] }
 serde_json.workspace = true

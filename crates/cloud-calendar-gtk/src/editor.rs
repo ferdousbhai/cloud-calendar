@@ -18,7 +18,7 @@ fn entry(text: &str, placeholder: &str) -> gtk::Entry {
 
 fn field(grid: &gtk::Grid, row: i32, name: &str, widget: &impl IsA<gtk::Widget>) {
     let l = gtk::Label::new(Some(name));
-    l.add_css_class("field-label");
+    l.add_css_class("dim-label");
     l.set_xalign(1.0);
     grid.attach(&l, 0, row, 1, 1);
     grid.attach(widget, 1, row, 1, 1);
@@ -97,7 +97,6 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         .modal(true)
         .default_width(520)
         .build();
-    win.add_css_class("editor");
     // While a save or delete runs, the editor stays open: closing it would hide the outcome.
     let busy = Rc::new(std::cell::Cell::new(false));
     win.connect_close_request(glib::clone!(
@@ -110,7 +109,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         }
     ));
     let grid = gtk::Grid::builder().row_spacing(8).column_spacing(10).build();
-    grid.add_css_class("editor");
+    grid.add_css_class("sheet");
 
     let calendar = gtk::DropDown::from_strings(&[]);
     fill_calendars(&calendar, &ui.writable.borrow());
@@ -135,6 +134,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         "Location",
     );
     let notes = gtk::TextView::new();
+    notes.add_css_class("notes");
     notes.set_wrap_mode(gtk::WrapMode::WordChar);
     notes.set_size_request(-1, 90);
     notes
@@ -167,11 +167,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     if let Some(caveat) = event.as_ref().and_then(|e| cals.edit_caveat(&e.id)) {
         let mut caveat = caveat;
         caveat[..1].make_ascii_uppercase();
-        let note = gtk::Label::new(Some(&format!("{caveat}.")));
-        note.add_css_class("note");
-        note.set_wrap(true);
-        note.set_xalign(0.0);
-        grid.attach(&note, 1, row, 1, 1);
+        grid.attach(&omui::label(&format!("{caveat}."), "meta"), 1, row, 1, 1);
         row += 1;
     }
     if let Some((support, label)) = &support {
@@ -184,11 +180,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
             ),
             (false, false) => format!("A repeating {label} event can't be changed or deleted here; use {label}."),
         };
-        let note = gtk::Label::new(Some(&text));
-        note.add_css_class("note");
-        note.set_wrap(true);
-        note.set_xalign(0.0);
-        grid.attach(&note, 1, row, 1, 1);
+        grid.attach(&omui::label(&text, "meta"), 1, row, 1, 1);
         row += 1;
     }
     match &event {
@@ -215,7 +207,8 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     row += 1;
     field(&grid, row, "Location", &location);
     row += 1;
-    field(&grid, row, "Notes", &notes);
+    // omui's text view is bare; in a frame it is a field of several lines.
+    field(&grid, row, "Notes", &gtk::Frame::builder().child(&notes).build());
     row += 1;
     if recurring {
         for w in [
@@ -240,12 +233,10 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
         }
     }
     // A new event waits for the calendars it can go on; the list follows when they arrive.
-    let no_calendars = gtk::Label::new(Some(
+    let no_calendars = omui::label(
         "No calendar you can add to has loaded yet (still loading, or an account failed: see the warning above the week).",
-    ));
-    no_calendars.add_css_class("error");
-    no_calendars.set_wrap(true);
-    no_calendars.set_xalign(0.0);
+        "error",
+    );
     if event.is_none() {
         no_calendars.set_visible(ui.writable.borrow().is_empty());
         grid.attach(&no_calendars, 1, row, 1, 1);
@@ -277,10 +268,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
             }
         ));
     }
-    let error = gtk::Label::new(None);
-    error.add_css_class("error");
-    error.set_wrap(true);
-    error.set_xalign(0.0);
+    let error = omui::label("", "error");
     grid.attach(&error, 1, row, 1, 1);
     row += 1;
 
@@ -300,10 +288,10 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     buttons.set_halign(gtk::Align::End);
     let delete = gtk::Button::with_label(if recurring { "Delete series" } else { "Delete" });
-    delete.add_css_class("destructive");
+    delete.add_css_class("destructive-action");
     let cancel = gtk::Button::with_label("Cancel");
     let save = gtk::Button::with_label("Save");
-    save.add_css_class("suggested");
+    save.add_css_class("suggested-action");
     if event.is_some() {
         delete.set_sensitive(can_delete);
         save.set_sensitive(can_edit);

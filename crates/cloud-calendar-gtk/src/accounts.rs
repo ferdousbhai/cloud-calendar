@@ -6,7 +6,7 @@ use gtk::{gdk, gio, glib, prelude::*};
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::ui::Ui;
+use crate::ui::{Ui, text};
 
 struct Win {
     window: gtk::Window,
@@ -15,15 +15,6 @@ struct Win {
     add_row: gtk::Box,
     status: gtk::Label,
     ui: Rc<Ui>,
-}
-
-fn text(s: &str, class: &str) -> gtk::Label {
-    let l = gtk::Label::new(Some(s));
-    l.add_css_class(class);
-    l.set_xalign(0.0);
-    l.set_wrap(true);
-    l.set_wrap_mode(gtk::pango::WrapMode::WordChar);
-    l
 }
 
 impl Win {
@@ -57,10 +48,8 @@ impl Win {
 
     /// Lists the linked accounts with whether each works.
     fn refresh(self: &Rc<Self>) {
-        while let Some(child) = self.list.first_child() {
-            self.list.remove(&child);
-        }
-        self.list.append(&text("Checking accounts…", "dim"));
+        omui::clear(&self.list);
+        self.list.append(&text("Checking accounts…", "meta"));
         let win = self.clone();
         glib::MainContext::default().spawn_local(async move {
             let read = gio::spawn_blocking(|| {
@@ -69,16 +58,14 @@ impl Win {
                     .map(|c| (c.statuses(), c.broken))
             })
             .await;
-            while let Some(child) = win.list.first_child() {
-                win.list.remove(&child);
-            }
+            omui::clear(&win.list);
             let (statuses, broken) = match read {
                 Ok(Ok(r)) => r,
                 Ok(Err(e)) => return win.list.append(&text(&e.message, "error")),
                 Err(_) => return,
             };
             if statuses.is_empty() && broken.is_empty() {
-                win.list.append(&text("No accounts linked yet.", "dim"));
+                win.list.append(&text("No accounts linked yet.", "meta"));
             }
             for s in statuses {
                 let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -86,13 +73,13 @@ impl Win {
                 about.set_hexpand(true);
                 about.append(&text(
                     &format!("{} {} ({})", if s.ok { "✓" } else { "✗" }, s.label, s.name),
-                    "title",
+                    "",
                 ));
-                about.append(&text(&s.detail, if s.ok { "dim" } else { "error" }));
+                about.append(&text(&s.detail, if s.ok { "meta" } else { "error" }));
                 row.append(&about);
                 let again = gtk::Button::with_label("Sign in again");
                 let remove = gtk::Button::with_label("Remove");
-                remove.add_css_class("destructive");
+                remove.add_css_class("destructive-action");
                 let name = s.name.clone();
                 again.connect_clicked(glib::clone!(
                     #[strong]
@@ -139,11 +126,10 @@ pub fn open(ui: &Rc<Ui>) {
         .modal(true)
         .default_width(560)
         .build();
-    window.add_css_class("editor");
     let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    root.add_css_class("editor");
+    root.add_css_class("sheet");
     let list = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    let status = text("", "note");
+    let status = text("", "meta");
     let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let win = Rc::new(Win {
         window: window.clone(),
@@ -153,10 +139,10 @@ pub fn open(ui: &Rc<Ui>) {
         ui: ui.clone(),
     });
 
-    root.append(&text("Linked accounts", "setup-title"));
+    root.append(&text("Linked accounts", "section-title"));
     root.append(&list);
     root.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-    root.append(&text("Add an account", "setup-title"));
+    root.append(&text("Add an account", "section-title"));
 
     let icloud = gtk::Button::with_label("iCloud");
     let google = gtk::Button::with_label("Google");
@@ -171,7 +157,7 @@ pub fn open(ui: &Rc<Ui>) {
     root.append(&add_row);
     root.append(&text(
         "iCloud uses the sign-in icloud-session keeps for all your iCloud apps. HEY and Google open your browser.",
-        "note",
+        "meta",
     ));
 
     root.append(&status);
