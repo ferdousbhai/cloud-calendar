@@ -1,4 +1,4 @@
-# The Accounts window on the stand-in accounts: each one's state, removing one, and the way out. dev/qa.sh runs it
+# The Accounts window on the stand-in accounts: each one's state, removing one, and the two ways out. dev/qa.sh runs it
 # (bin/check runs all). Sign in and the add buttons are not pressed: they open a browser or iCloud's sign-in.
 {"do":"wait","role":"label","name":"iCloud: icloud-session failed (Failed to connect to address `unix:path=/nonexistent`: No such file or directory (os error 2))","visible":true}
 {"do":"click","role":"button","name":"Manage accounts"}
@@ -24,7 +24,12 @@
 {"do":"click","role":"button","name":"Really remove icloud?"}
 {"do":"wait","role":"label","name":"✗ iCloud (icloud)","visible":false}
 {"do":"wait","role":"label","name":"✓ HEY (hey)","visible":true}
-{"do":"key","keys":"Escape"}
+# The window's own Close. Its title bar has a Close too, and no name or ancestor tells the two apart, so this one is
+# reached as the keyboard reaches it: it is the stop after the add buttons.
+{"do":"focus","role":"button","name":"HEY"}
+{"do":"key","keys":"Tab"}
+{"do":"wait","focus":{"role":"button","name":"Close"}}
+{"do":"key","keys":"Return"}
 {"do":"wait","role":"window","name":"Accounts","visible":false}
 {"do":"wait","role":"label","name":"iCloud: icloud-session failed (Failed to connect to address `unix:path=/nonexistent`: No such file or directory (os error 2))","visible":false}
 {"do":"shot","path":"accounts-removed.png"}

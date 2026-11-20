@@ -1,12 +1,10 @@
 # The event editor on the stand-in accounts: a new event, a Google event changed and deleted, and a repeating HEY
 # event that can only be deleted. The editor is a modal window of its own; dev/qa.sh runs it (bin/check runs all).
-# `n` opens it too, but omui's `key` waits for its release on the window it was pressed in, and the editor has taken
-# the keyboard by then, so the button is what is pressed here.
 @to-fakes
 {"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
 
-# A new event: the title has the keyboard, All day hides the clocks, Escape closes it.
-{"do":"click","role":"button","name":"New event"}
+# A new event, with n: the title has the keyboard, All day hides the clocks, Escape closes it.
+{"do":"key","keys":"n"}
 {"do":"wait","role":"window","name":"New event","visible":true}
 {"do":"wait","role":"text-box","name":"Title","focused":true}
 {"do":"wait","role":"label","name":"Hidden (google)","visible":true}
@@ -31,7 +29,7 @@
 {"do":"key","keys":"Escape"}
 {"do":"wait","role":"window","name":"New event","visible":false}
 
-# Without a start time, or with one after the end, it says so and stays open; then it saves and closes.
+# From its button. Without a start time, or with one after the end, it says so and stays open; then it saves and closes.
 {"do":"click","role":"button","name":"New event"}
 {"do":"wait","role":"text-box","name":"Title","focused":true}
 {"do":"type","text":"Dentist"}
