@@ -109,8 +109,11 @@ impl Win {
                         win.run("Removing…", move || api::accounts::remove(&name));
                     }
                 ));
-                row.append(&again);
-                row.append(&remove);
+                for button in [&again, &remove] {
+                    // Beside several lines of detail, a button keeps its own height.
+                    button.set_valign(gtk::Align::Center);
+                    row.append(button);
+                }
                 win.list.append(&row);
             }
             for b in broken {

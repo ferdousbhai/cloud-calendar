@@ -9,7 +9,10 @@
 # Each row's two buttons read alike; the name a screen reader says first is the account's own.
 {"do":"focus","role":"button","name":"Sign in to icloud again"}
 {"do":"wait","focus":{"role":"button","name":"Sign in to icloud again"}}
-{"do":"wait","role":"button","name":"HEY","sensitive":true}
+# iCloud's failure takes several lines; its buttons stay the height of any other, which is 24 at omui's font here.
+{"do":"wait","role":"button","name":"HEY","sensitive":true,"height":24}
+{"do":"wait","role":"button","name":"Sign in to icloud again","sensitive":true,"height":24}
+{"do":"wait","role":"button","name":"Remove icloud","height":24}
 {"do":"key","keys":"Escape"}
 {"do":"wait","role":"window","name":"Accounts","visible":false}
 
