@@ -146,6 +146,8 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     ] {
         e.update_property(&[gtk::accessible::Property::Label(name)]);
     }
+    // The list has no placeholder to be named by, nor have the notes: each takes the label beside it.
+    calendar.update_property(&[gtk::accessible::Property::Label("Calendar")]);
     let location = entry(
         event.as_ref().and_then(|e| e.location.as_deref()).unwrap_or(""),
         "Location",
@@ -154,6 +156,7 @@ pub fn open(ui: &Rc<Ui>, event: Option<Event>, day: NaiveDate) {
     notes.add_css_class("notes");
     notes.set_wrap_mode(gtk::WrapMode::WordChar);
     notes.set_size_request(-1, 90);
+    notes.update_property(&[gtk::accessible::Property::Label("Notes")]);
     notes
         .buffer()
         .set_text(event.as_ref().and_then(|e| e.notes.as_deref()).unwrap_or(""));

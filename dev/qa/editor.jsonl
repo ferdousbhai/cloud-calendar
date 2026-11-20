@@ -10,6 +10,19 @@
 {"do":"wait","role":"window","name":"New event","visible":true}
 {"do":"wait","role":"text-box","name":"Title","focused":true}
 {"do":"wait","role":"label","name":"Hidden (google)","visible":true}
+# The list of calendars is opened by its name and walked with the keyboard. Escape closes the list, not the editor.
+{"do":"click","role":"combo-box","name":"Calendar"}
+{"do":"wait","focus":{"role":"list-item","name":"Hidden (google)"}}
+{"do":"key","keys":"Down"}
+{"do":"key","keys":"Return"}
+{"do":"wait","focus":{"role":"combo-box","name":"Calendar"}}
+{"do":"wait","role":"label","name":"Hidden (google)","visible":false}
+{"do":"wait","role":"label","name":"Me (google)","visible":true}
+{"do":"click","role":"combo-box","name":"Calendar"}
+{"do":"wait","role":"list-item","name":"Personal (hey)","visible":true}
+{"do":"key","keys":"Escape"}
+{"do":"wait","focus":{"role":"combo-box","name":"Calendar"}}
+{"do":"wait","role":"window","name":"New event","visible":true}
 {"do":"set","role":"checkbox","name":"All day","checked":true}
 {"do":"wait","role":"text-box","name":"Start time","visible":false}
 {"do":"wait","role":"text-box","name":"End time","visible":false}
@@ -36,6 +49,8 @@
 {"do":"focus","role":"text-box","name":"Start time"}
 {"do":"key","keys":"<Control>a"}
 {"do":"type","text":"09:30"}
+{"do":"type","role":"text-box","name":"Notes","text":"Bring the x-rays"}
+{"do":"wait","role":"text-box","name":"Notes","focused":true,"text":"Bring the x-rays"}
 {"do":"click","role":"button","name":"Save"}
 {"do":"wait","role":"window","name":"New event","visible":false}
 
