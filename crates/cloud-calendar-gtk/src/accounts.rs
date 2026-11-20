@@ -77,13 +77,12 @@ impl Win {
                 ));
                 about.append(&text(&s.detail, if s.ok { "meta" } else { "error" }));
                 row.append(&about);
-                let again = gtk::Button::with_label("Sign in again");
-                let remove = gtk::Button::with_label("Remove");
+                let (again, remove) = (gtk::Button::new(), gtk::Button::new());
                 remove.add_css_class("destructive-action");
                 // Each row has the same two buttons; a screen reader hears whose they are.
                 let name = s.name.clone();
-                again.update_property(&[gtk::accessible::Property::Label(&format!("Sign in to {name} again"))]);
-                remove.update_property(&[gtk::accessible::Property::Label(&format!("Remove {name}"))]);
+                label(&again, "Sign in again", &format!("Sign in to {name} again"));
+                label(&remove, "Remove", &format!("Remove {name}"));
                 again.connect_clicked(glib::clone!(
                     #[strong]
                     win,
@@ -103,8 +102,7 @@ impl Win {
                     win,
                     move |b| {
                         if !confirming.replace(true) {
-                            b.set_label("Really remove?");
-                            b.update_property(&[gtk::accessible::Property::Label(&format!("Really remove {name}?"))]);
+                            label(b, "Really remove?", &format!("Really remove {name}?"));
                             return;
                         }
                         let name = name.clone();
@@ -121,6 +119,14 @@ impl Win {
             }
         });
     }
+}
+
+/// Gives `button` the text it shows and the name a screen reader says. GTK names a button by the label inside it
+/// (`set_label` relates the two) before any name it is given, so that relation goes each time the text is set.
+fn label(button: &gtk::Button, shown: &str, name: &str) {
+    button.set_label(shown);
+    button.reset_relation(gtk::AccessibleRelation::LabelledBy);
+    button.update_property(&[gtk::accessible::Property::Label(name)]);
 }
 
 pub fn open(ui: &Rc<Ui>) {

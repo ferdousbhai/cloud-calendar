@@ -6,7 +6,9 @@
 {"do":"wait","role":"label","name":"✓ Google (google)","visible":true}
 {"do":"wait","role":"label","name":"✓ HEY (hey)","visible":true}
 {"do":"wait","role":"label","name":"✗ iCloud (icloud)","visible":true}
-{"do":"wait","role":"button","name":"Sign in to icloud again","sensitive":true}
+# Each row's two buttons read alike; the name a screen reader says first is the account's own.
+{"do":"focus","role":"button","name":"Sign in to icloud again"}
+{"do":"wait","focus":{"role":"button","name":"Sign in to icloud again"}}
 {"do":"wait","role":"button","name":"HEY","sensitive":true}
 {"do":"key","keys":"Escape"}
 {"do":"wait","role":"window","name":"Accounts","visible":false}
@@ -14,7 +16,7 @@
 # Remove asks again on its own button, then the account goes from the list and its warning from the week.
 {"do":"click","role":"button","name":"Manage accounts"}
 {"do":"click","role":"button","name":"Remove icloud"}
-{"do":"wait","role":"button","name":"Really remove icloud?","visible":true}
+{"do":"wait","focus":{"role":"button","name":"Really remove icloud?"}}
 {"do":"wait","role":"button","name":"Remove hey","visible":true}
 {"do":"click","role":"button","name":"Really remove icloud?"}
 {"do":"wait","role":"label","name":"✗ iCloud (icloud)","visible":false}
