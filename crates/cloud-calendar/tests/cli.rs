@@ -874,27 +874,29 @@ fn failures_exit_1_on_stderr_in_every_mode() {
     assert_eq!(out.status.code(), Some(0), "help is a success");
 }
 
-/// A stand-in for the desktop app's binary that writes down that it ran, and with what, and ends.
-fn fake_app(home: &Home) -> PathBuf {
-    let app = home.dir.join("fake-app");
-    std::fs::write(
-        &app,
-        format!(
-            "#!/bin/sh\nprintf 'ran %s\\n' \"$*\" >> '{}'\n",
-            home.dir.join("app.log").display()
-        ),
+/// A stand-in for the desktop app's binary (`tests/fake-app`), which writes down in `app.log` that it ran, and with
+/// what. It and every other program the tests run are checked in, never written by a test: a test that wrote one and
+/// ran it would race another test's fork holding the write end open, and fail with ETXTBSY ("Text file busy").
+fn fake_app(home: &Home) -> (PathBuf, PathBuf) {
+    (
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake-app"),
+        home.dir.join("app.log"),
     )
-    .unwrap();
-    std::fs::set_permissions(&app, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    app
 }
 
 /// `cloud-calendar open` is the window: it becomes the app's binary, which the command line never links.
 #[test]
 fn open_runs_the_desktop_app() {
     let home = Home::new("open", true);
-    let app = fake_app(&home);
-    let out = home.run(&["open"], "", &[("CLOUD_CALENDAR_GTK_BINARY", app.to_str().unwrap())]);
+    let (app, log) = fake_app(&home);
+    let out = home.run(
+        &["open"],
+        "",
+        &[
+            ("CLOUD_CALENDAR_GTK_BINARY", app.to_str().unwrap()),
+            ("FAKE_APP_LOG", log.to_str().unwrap()),
+        ],
+    );
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(home.file("app.log"), "ran \n");
     // Without the app it says where it looked, on stderr, and exits 1.
@@ -909,18 +911,20 @@ fn open_runs_the_desktop_app() {
 #[test]
 fn the_old_command_opens_the_window() {
     let home = Home::new("old-command", true);
-    let app = fake_app(&home);
+    let (app, log) = fake_app(&home);
     let bin = home.dir.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_cloud-calendar"), bin.join("cloud-calendar")).unwrap();
     let shim = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/compat/cloud-calendar-gtk");
-    std::fs::copy(&shim, bin.join("cloud-calendar-gtk")).unwrap();
+    // Linked, not copied: the shim runs the `cloud-calendar` beside the name it was run by.
+    std::os::unix::fs::symlink(shim, bin.join("cloud-calendar-gtk")).unwrap();
     let out = Command::new(bin.join("cloud-calendar-gtk"))
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .env("HOME", &home.dir)
         .env("XDG_CONFIG_HOME", home.dir.join("config"))
         .env("CLOUD_CALENDAR_GTK_BINARY", &app)
+        .env("FAKE_APP_LOG", &log)
         .output()
         .unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
