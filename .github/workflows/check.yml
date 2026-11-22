@@ -25,6 +25,12 @@ jobs:
       # no font at all until one is installed. bin/check fails, rather than skips, when GTK is missing.
       - name: Install what the checks need
         run: pacman -Syu --noconfirm --needed base-devel rust git gtk4 dbus python ttf-dejavu
+      # English is written as en_US.UTF-8 in the app (omui's i18n), as on every Omarchy install; the container has
+      # no locale generated, and the QA's times would fall back to the C locale's.
+      - name: Generate the en_US.UTF-8 locale
+        run: |
+          sed -i 's/^#\(en_US\.UTF-8 UTF-8\)/\1/' /etc/locale.gen
+          locale-gen
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:

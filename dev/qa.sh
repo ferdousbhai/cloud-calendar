@@ -20,6 +20,8 @@ set -Eeuo pipefail
 app=$(realpath -- "$1")
 shift
 command -v gtk4-broadwayd >/dev/null || { echo "qa: gtk4-broadwayd is required" >&2; exit 1; }
+# The app writes English as en_US.UTF-8 has it (omui's i18n), and the scripts' times and dates are that locale's.
+locale -a 2>/dev/null | grep -qix 'en_US\.utf-\?8' || { echo "qa: the en_US.UTF-8 locale is required (locale-gen)" >&2; exit 1; }
 fakes=$(realpath -- "$(dirname -- "${BASH_SOURCE[0]}")/../crates/cloud-calendar/tests")
 
 days=$(( ( $(date -u +%s) - $(date -u -d 2026-10-12 +%s) ) / 86400 ))
