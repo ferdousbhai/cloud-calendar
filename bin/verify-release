@@ -15,8 +15,10 @@ exec bin/arch-run env EXPECTED_VERSION="$version" EXPECTED_ARCH="$arch" \
     bash /tmp/install.sh
     [[ $(pacman -Q cloud-calendar | cut -d" " -f2) == "$EXPECTED_VERSION-1" ]]
     [[ $(cloud-calendar --version) == "cloud-calendar $EXPECTED_VERSION" ]]
+    test -x /usr/lib/cloud-calendar/cloud-calendar-gtk
     test -x /usr/bin/cloud-calendar-gtk
-    ldd /usr/bin/cloud-calendar-gtk > /tmp/gtk-libraries
+    test -f /usr/share/applications/cloud-calendar.desktop
+    ldd /usr/lib/cloud-calendar/cloud-calendar-gtk > /tmp/gtk-libraries
     ! grep -q "not found" /tmp/gtk-libraries
     test -f /usr/lib/systemd/user/cloud-calendar-notify.timer
   '

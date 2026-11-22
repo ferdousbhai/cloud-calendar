@@ -4,6 +4,7 @@ description = "Calendar providers (iCloud, Google, HEY), types and config for cl
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 chrono.workspace = true

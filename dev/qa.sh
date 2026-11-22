@@ -12,7 +12,10 @@ set -Eeuo pipefail
 #   OMUI_QA_TIMEOUT=120            seconds before one script's run is stopped
 #
 # The fakes' events are in the week of 2026-10-12, and the app opens on today. A script line that is `@to-fakes` goes
-# back that many weeks with the app's `h` key.
+# back that many weeks with the app's `h` key. A line `@gws <count> <pattern>` is checked once the app has ended: the
+# stand-in `gws` must have been run that many times with arguments matching the pattern (an extended regular
+# expression over its tab-separated arguments), which is how a script tells what was sent to the account from what
+# the window shows.
 (( $# >= 2 )) || { echo "usage: dev/qa.sh <app-binary> <script.jsonl>..." >&2; exit 2; }
 app=$(realpath -- "$1")
 shift
@@ -68,6 +71,8 @@ for script in "$@"; do
   while IFS= read -r line; do
     if [[ $line == '@to-fakes' ]]; then
       for (( n = 0; n < days / 7; n++ )); do printf '%s\n' '{"do":"key","keys":"h"}'; done
+    elif [[ $line == '@gws '* ]]; then
+      printf '%s\n' "${line#@gws }" >> "$run/gws.expected"
     else
       printf '%s\n' "$line"
     fi
@@ -85,6 +90,7 @@ for script in "$@"; do
       XDG_CACHE_HOME="$run/cache" XDG_RUNTIME_DIR="$root/runtime" LC_ALL=C TZ=UTC \
       CLOUD_CALENDAR_HEY_COMMAND="$fakes/fake-hey" CLOUD_CALENDAR_GWS_COMMAND="$fakes/fake-gws" \
       CLOUD_CALENDAR_NOTIFY_COMMAND="$fakes/fake-notify" CLOUD_CALENDAR_BROWSER=true FAKE_GWS_SECRET=qa \
+      FAKE_GWS_LOG="$run/gws.log" \
       CLOUD_CALENDAR_GOOGLE_CLIENT_ID=qa CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET=qa \
       GDK_BACKEND=broadway BROADWAY_DISPLAY=":$display" OMUI_QA=1 OMUI_QA_INPUT="127.0.0.1:$port" OMUI_QA_FD=3 \
       timeout "${OMUI_QA_TIMEOUT:-120}" "$app" <"$run/script.jsonl" 3>"$run/answers"
@@ -97,6 +103,15 @@ for script in "$@"; do
   grep -Ev '^[[:space:]]*(#|$)' "$run/script.jsonl" | awk -v answers="$run/answers" '
     { if ((getline answer < answers) > 0) { print "> " $0; print "< " answer } else { print "> " $0 " (not run)" } }
     END { while ((getline answer < answers) > 0) print "< " answer }'
+  if [[ -f $run/gws.expected ]]; then
+    while read -r count pattern; do
+      sent=$(grep -Ec -- "$pattern" "$run/gws.log" 2>/dev/null || true)
+      if (( sent != count )); then
+        echo "qa: $name: gws ran $sent times matching '$pattern', not $count"
+        status=1
+      fi
+    done < "$run/gws.expected"
+  fi
   if (( status == 0 )); then
     echo "qa: $name passed"
   else

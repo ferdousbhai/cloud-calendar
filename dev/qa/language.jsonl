@@ -1,0 +1,83 @@
+# The window follows a switch of language while it is open, and lists every shortcut on ? and F1. dev/qa.sh runs it
+# (bin/check runs all). The switch is omui's QA `language` command, which does what Omarchy's language file does, into
+# dev/qa/da.json: a few strings in Danish, which only QA builds carry (main.rs registers it, since the app runs in the
+# shots directory, where the file's path would not lead).
+@to-fakes
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"wait","role":"button","name":"Today","visible":true}
+
+# Danish: the toolbar's words, an icon button's name and the search's placeholder change where they are; the week
+# built from the accounts stays.
+{"do":"language","code":"da"}
+{"do":"wait","role":"button","name":"I dag","visible":true}
+{"do":"wait","role":"toggle-button","name":"Dagsorden","visible":true}
+{"do":"wait","role":"button","name":"Ny begivenhed","visible":true}
+{"do":"wait","role":"button","name":"Genindlæs (r)","visible":true}
+{"do":"wait","role":"search-box","name":"Søg i perioden · ~ betydning","visible":true}
+{"do":"wait","role":"button","name":"Today","visible":false}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"shot","path":"week-da.png"}
+
+# The overlay lists the shortcuts in the language of the moment; ? and Escape close it, and F1 opens it too.
+{"do":"key","keys":"question"}
+{"do":"wait","dialog":"Keyboard shortcuts"}
+{"do":"wait","role":"label","name":"I dag","in":{"role":"dialog","name":"Keyboard shortcuts"},"visible":true}
+{"do":"wait","role":"label","name":"Genindlæs","in":{"role":"dialog","name":"Keyboard shortcuts"},"visible":true}
+{"do":"shot","path":"shortcuts-da.png"}
+{"do":"key","keys":"Escape"}
+{"do":"wait","dialog":null}
+{"do":"key","keys":"F1"}
+{"do":"wait","dialog":"Keyboard shortcuts"}
+{"do":"key","keys":"F1"}
+{"do":"wait","dialog":null}
+
+# Arabic reads right to left: the week runs from the right, and ← is the week after. Arabic has no catalog here, so
+# its words are English.
+{"do":"language","code":"ar"}
+{"do":"wait","role":"button","name":"Today","visible":true}
+{"do":"shot","path":"week-rtl.png"}
+{"do":"focus","role":"button","name":"Today"}
+{"do":"key","keys":"Left"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":false}
+{"do":"key","keys":"Right"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"language","code":"da"}
+{"do":"wait","role":"button","name":"I dag","visible":true}
+
+# An editor opened in Danish, and one that is open through a switch back to English: its labels follow.
+{"do":"key","keys":"n"}
+{"do":"wait","role":"window","name":"Ny begivenhed","visible":true}
+{"do":"wait","role":"text-box","name":"Titel","focused":true}
+{"do":"wait","role":"button","name":"Gem","visible":true}
+{"do":"language","code":"en"}
+{"do":"wait","role":"window","name":"New event","visible":true}
+{"do":"wait","role":"text-box","name":"Title","focused":true}
+{"do":"wait","role":"button","name":"Save","visible":true}
+# The editor is typed into: ? is a character there, and F1 lists the shortcuts.
+{"do":"type","text":"?"}
+{"do":"wait","dialog":null}
+{"do":"wait","role":"text-box","name":"Title","text":"?"}
+{"do":"key","keys":"F1"}
+{"do":"wait","dialog":"Keyboard shortcuts"}
+{"do":"key","keys":"Escape"}
+{"do":"wait","dialog":null}
+{"do":"key","keys":"<Control>a"}
+{"do":"key","keys":"BackSpace"}
+{"do":"key","keys":"Escape"}
+{"do":"wait","role":"window","name":"New event","visible":false}
+
+# Back in English, the window says it all in English again; in the search, ? is text and opens nothing.
+{"do":"wait","role":"button","name":"Today","visible":true}
+{"do":"wait","role":"button","name":"I dag","visible":false}
+{"do":"type","role":"search-box","name":"Search this period · ~ meaning","text":"?"}
+{"do":"wait","dialog":null}
+{"do":"wait","role":"search-box","name":"Search this period · ~ meaning","text":"?"}
+{"do":"key","keys":"<Control>a"}
+{"do":"key","keys":"BackSpace"}
+# The arrows move a week as h and l do, once the search no longer has the keyboard.
+{"do":"focus","role":"button","name":"Today"}
+{"do":"key","keys":"Right"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":false}
+{"do":"key","keys":"Left"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"quit"}

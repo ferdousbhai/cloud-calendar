@@ -4,6 +4,8 @@ Your iCloud, Google and HEY calendars in one place on Omarchy: a fast native GTK
 Omarchy, a CLI that people and AI agents can both drive, and event notifications through Omarchy's
 own notification system. It is the calendar sibling of [cloud-mail](https://github.com/ferdousbhai/cloud-mail).
 
+![The week view: seven columns of events from two accounts, each with its calendar's colour](docs/screenshot.png)
+
 - **One merged view.** Every linked account's events in one week or agenda, each tagged with its
   account and calendar. If one account is signed out or offline, the others still load, and one line
   says what's wrong.
@@ -19,7 +21,7 @@ own notification system. It is the calendar sibling of [cloud-mail](https://gith
 |---|---|
 | `crates/cloud-calendar-api` | Providers (`icloud.rs`, `google.rs`, `hey.rs`), the merged view (`unified.rs`), accounts (`accounts.rs`), notifications (`notify.rs`), config |
 | `crates/cloud-calendar` | `cloud-calendar` CLI |
-| `crates/cloud-calendar-gtk` | `cloud-calendar-gtk` desktop app (GTK4) |
+| `crates/cloud-calendar-gtk` | The desktop app (GTK4), opened by `cloud-calendar open` |
 | `packaging/` | PKGBUILD (x86_64 and aarch64) and the notification timer's systemd user units |
 
 ## Install
@@ -43,7 +45,7 @@ systemctl --user enable --now cloud-calendar-notify.timer   # event notification
 The installer trusts the package-signing key (pinned by fingerprint, the same key cloud-mail,
 icloud-for-omarchy, ghost and omacloud use), adds the `[cloud-calendar]` repository (`[cloud-calendar-aarch64]` on ARM)
 and installs the package; updates then arrive with `omarchy update`. Before the first release,
-`cargo build --release` in a checkout builds `target/release/cloud-calendar` and
+`cargo build --release` in a checkout builds `target/release/cloud-calendar` and the window it opens,
 `target/release/cloud-calendar-gtk`. iCloud calendars need icloud-session (from
 icloud-for-omarchy) installed; adding iCloud without it says so.
 
@@ -120,17 +122,46 @@ cloud-calendar account remove google --yes
 
 ## Use it
 
-Open **Cloud Calendar** from the app launcher. `h`/`l` (or ←/→) move a week, `t` goes to today,
-`a` switches between the week and a two-week agenda, `n` adds an event, `r` reloads. Click an event
-to change or delete it, or a day's heading to add an event on that day.
+Open **Cloud Calendar** from the app launcher, or run `cloud-calendar open`. Click an event to change or delete it, or a day's
+heading to add an event on that day. A deleted event can be brought back with **Undo** for a few
+seconds; closing the editor with changes that were not saved asks first.
+
+| Key | Does |
+|---|---|
+| `h` or `←` | The week before (two weeks in the agenda) |
+| `l` or `→` | The week after |
+| `t` | Today |
+| `a` | Switch between the week and the two-week agenda |
+| `n` | New event |
+| `r` | Reload |
+| `?` or `F1` | Show or hide every shortcut (`F1` or `Ctrl+?` in the editor and Accounts) |
+| `Tab`, `Shift+Tab` | Move between the buttons, the search and the events |
+| `Enter` or `Space` | Open the event, or press the button, that has the keyboard |
+| `Escape` | Close the editor or Accounts |
+| `Ctrl+W` | Close the window |
+| `Ctrl+Q` | Quit |
+
+The single letters, `?` and the arrows act in the main window only, and not while you are typing in the
+search. In a language that reads right to left, `←` is the week after and `→` the week before, as the week runs. `Escape`, `Ctrl+W` and `Ctrl+Q` ask before they discard an event's unsaved changes, and a
+save or delete that is under way finishes after the last window has closed.
 
 To open it with `SUPER + SHIFT + C`, which Omarchy binds to HEY's web calendar by default, add this
 to `~/.config/hypr/bindings.lua`:
 
 ```lua
 hl.unbind("SUPER + SHIFT + C")
-o.bind("SUPER + SHIFT + C", "Calendar", "cloud-calendar-gtk")
+o.bind("SUPER + SHIFT + C", "Calendar", "cloud-calendar open")
 ```
+
+The app follows Omarchy's language (Setup > Region > Language), live, in its window and in its notifications, and
+shows the window's times on that language's 12- or 24-hour clock; only English ships so far. The command line's output stays English.
+
+### One name
+
+The app is `cloud-calendar` everywhere: the command, the package, the `.desktop` file, the icon and the window's class
+in Hyprland. Earlier versions ran the window as `cloud-calendar-gtk`, with the class `com.ferdousbhai.CloudCalendar`. What still
+runs `cloud-calendar-gtk` (a key binding, a notification from before the upgrade) opens the window as before; a
+Hyprland window rule that matched `class:com.ferdousbhai.CloudCalendar` needs `cloud-calendar` instead.
 
 From the terminal:
 
@@ -172,9 +203,12 @@ Piped output is a JSON envelope:
 `--styled` forces text. Each event has `id`, `account`, `calendar_id`, `calendar`, `title`, `start`,
 `end` (local RFC 3339, or `YYYY-MM-DD` for all-day with an exclusive end), `all_day`, `location`,
 `notes` and `recurring`. An account that failed shows up in `meta.warnings` (`account`, `code`,
-`message`) and doesn't fail the command. Errors are `{"ok": false, "error": {"code", "message"}}`
-with exit codes 2 (invalid request), 3 (not signed in, not configured, or no keyring:
-`keyring_unavailable`), 4 (not found) and 5 (an account is unreachable).
+`message`) and doesn't fail the command. The command exits 0 when it succeeded and 1 when it
+failed, as Omarchy's commands do. A failure writes `{"ok": false, "error": {"code", "message"}}` to
+stderr (as text, `error: …`) and nothing to stdout, so stdout only ever carries results. `code` tells
+the failures apart: `usage` (bad arguments), `bad_request`, `not_configured`, `account_unauthorized`
+(sign in again), `keyring_unavailable`, `not_found` and `account_unavailable` (an account is
+unreachable).
 
 ## Notifications
 

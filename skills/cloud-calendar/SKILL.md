@@ -50,8 +50,10 @@ Output: `{ok, data, summary, meta: {warnings}}`. Check warnings even after a
 successful exit: failed accounts are omitted, so an empty result does not prove
 availability across them. IDs carry account prefixes; preserve them and choose
 the owner's intended writable calendar. Ask when the account/calendar is ambiguous.
-Error exits: 2 invalid request, 3 not configured/signed in/keyring unavailable,
-4 not found, 5 unreachable. Use error text and installed-version `--help`.
+Exit 0 is success, 1 any failure. A failure's `{ok: false, error: {code,
+message}}` is on stderr, never stdout; `code` says what failed: `usage`,
+`bad_request`, `not_configured`, `account_unauthorized`, `keyring_unavailable`,
+`not_found`, `account_unavailable`. Use error text and installed-version `--help`.
 
 ## Change only when requested
 
