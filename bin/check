@@ -10,13 +10,18 @@ python3 bin/check-shared-support
 
 step() { printf '\n==> %s\n' "$*"; }
 
-# The desktop app needs GTK 4; without it only the CLI and the library are checked.
+# The desktop app needs GTK 4, and its QA the broadway display that comes with it. A machine without them has not
+# checked the app, so that fails here and in CI; CHECK_NO_GTK=1 says so on purpose and checks the CLI and the library
+# alone.
 crates=(--workspace)
 gtk=1
-if ! pkg-config --exists gtk4 2>/dev/null; then
-  echo "note: skipping cloud-calendar-gtk (install gtk4 to check it)" >&2
+if [[ ${CHECK_NO_GTK:-} == 1 ]]; then
+  echo "note: CHECK_NO_GTK=1, so cloud-calendar-gtk and its window QA are not checked" >&2
   crates+=(--exclude cloud-calendar-gtk)
   gtk=0
+elif ! pkg-config --exists gtk4 2>/dev/null || ! command -v gtk4-broadwayd >/dev/null; then
+  echo "error: gtk4 (with gtk4-broadwayd) is needed to check cloud-calendar-gtk; install it, or set CHECK_NO_GTK=1 to leave the app unchecked" >&2
+  exit 1
 fi
 
 step "rustfmt (fix with: cargo fmt --all)"
@@ -27,8 +32,8 @@ step "cargo test"
 cargo test --locked "${crates[@]}"
 
 if ((gtk)); then
-  # The app driven through its views, the editor and Accounts on the stand-in accounts, on a private broadway
-  # display; any GTK warning fails it. Only this build has omui's QA in it.
+  # The app driven through its views, the editor, Accounts and its questions about unsaved work on the stand-in
+  # accounts, on a private broadway display; any GTK warning fails it. Only this build has omui's QA in it.
   step "app QA (dev/qa)"
   cargo build --locked -p cloud-calendar-gtk --features qa
   dev/qa.sh "${CARGO_TARGET_DIR:-target}/debug/cloud-calendar-gtk" dev/qa/*.jsonl
@@ -38,5 +43,6 @@ step "packaging"
 bash packaging/repo/test.sh
 python3 packaging/repo/test_arch.py
 bash -n bin/arch-run packaging/aur/cloud-calendar/PKGBUILD bin/build-package bin/release bin/verify-release .githooks/pre-push dev/preview.sh dev/qa.sh
+sh -n packaging/compat/cloud-calendar-gtk
 
 printf '\nAll checks passed.\n'

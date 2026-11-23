@@ -1,0 +1,101 @@
+# Work that could be lost: the editor asks before it closes with changes, by Escape, Cancel, Ctrl+W and Ctrl+Q alike;
+# a delete can be undone; and a letter typed into a text field is never a shortcut. dev/qa.sh runs it (bin/check runs
+# all).
+@to-fakes
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+
+# Escape with a title typed asks. The question's own Escape keeps the work, and so does Enter.
+{"do":"key","keys":"n"}
+{"do":"wait","role":"text-box","name":"Title","focused":true}
+{"do":"type","text":"Dentist"}
+{"do":"key","keys":"Escape"}
+{"do":"wait","dialog":"Discard changes?"}
+{"do":"key","keys":"Escape"}
+{"do":"wait","dialog":null}
+{"do":"wait","role":"text-box","name":"Title","text":"Dentist","visible":true}
+{"do":"key","keys":"Escape"}
+{"do":"wait","dialog":"Discard changes?"}
+{"do":"key","keys":"Return"}
+{"do":"wait","dialog":null}
+{"do":"wait","role":"window","name":"New event","visible":true}
+
+# What is compared is the content: with the title taken out again there is nothing to lose, and no question.
+{"do":"focus","role":"text-box","name":"Title"}
+{"do":"key","keys":"<Control>a"}
+{"do":"key","keys":"BackSpace"}
+{"do":"key","keys":"Escape"}
+{"do":"wait","role":"window","name":"New event","visible":false}
+
+# Ctrl+W closes the editor as Escape does, and Discard lets the changes go.
+{"do":"key","keys":"n"}
+{"do":"wait","role":"text-box","name":"Title","focused":true}
+{"do":"type","text":"Dentist"}
+{"do":"key","keys":"<Control>w"}
+{"do":"wait","dialog":"Discard changes?"}
+{"do":"click","role":"button","name":"Discard"}
+{"do":"wait","role":"window","name":"New event","visible":false}
+
+# Ctrl+Q with changes asks too, and keeping them calls the quit off: the app and the editor are still here. Cancel
+# asks the same; discarding there closes the editor alone.
+{"do":"click","role":"button","name":"Design review · Me (google)"}
+{"do":"wait","role":"text-box","name":"Title","focused":true,"text":"Design review"}
+{"do":"type","role":"text-box","name":"Notes","text":"Bring the slides"}
+{"do":"key","keys":"<Control>q"}
+{"do":"wait","dialog":"Discard changes?"}
+{"do":"click","role":"button","name":"Keep editing"}
+{"do":"wait","dialog":null}
+{"do":"wait","role":"text-box","name":"Notes","text":"Bring the slides","visible":true}
+{"do":"click","role":"button","name":"Cancel"}
+{"do":"wait","dialog":"Discard changes?"}
+{"do":"click","role":"button","name":"Discard"}
+{"do":"wait","role":"window","name":"Event","visible":false}
+{"do":"wait","role":"button","name":"Design review · Me (google)","visible":true}
+
+# With nothing changed, Ctrl+W closes the editor without a word, and Accounts too.
+{"do":"click","role":"button","name":"Design review · Me (google)"}
+{"do":"wait","role":"window","name":"Event","visible":true}
+{"do":"key","keys":"<Control>w"}
+{"do":"wait","role":"window","name":"Event","visible":false}
+{"do":"click","role":"button","name":"Manage accounts"}
+{"do":"wait","role":"window","name":"Accounts","visible":true}
+{"do":"key","keys":"<Control>w"}
+{"do":"wait","role":"window","name":"Accounts","visible":false}
+
+# In the search, the week's letters are text and its arrows move the cursor: the week stays, no agenda, no editor.
+{"do":"type","role":"search-box","name":"Search this period · ~ meaning","text":"tan"}
+{"do":"wait","role":"search-box","name":"Search this period · ~ meaning","text":"tan"}
+{"do":"key","keys":"Right"}
+{"do":"key","keys":"Home"}
+{"do":"key","keys":"Left"}
+{"do":"wait","role":"label","name":"12 Oct – 18 Oct 2026","visible":true}
+{"do":"wait","role":"toggle-button","name":"Agenda","checked":false}
+{"do":"wait","role":"window","name":"New event","visible":false}
+{"do":"key","keys":"<Control>a"}
+{"do":"key","keys":"BackSpace"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+
+# A deleted event leaves the week at once, and Undo brings it back: nothing was sent yet.
+{"do":"click","role":"button","name":"Design review · Me (google)"}
+{"do":"click","role":"button","name":"Delete"}
+{"do":"click","role":"button","name":"Really delete?"}
+{"do":"wait","role":"window","name":"Event","visible":false}
+{"do":"wait","toasts":["Deleted “Design review”"]}
+{"do":"wait","role":"button","name":"Design review · Me (google)","visible":false}
+{"do":"click","role":"button","name":"Undo"}
+{"do":"wait","toasts":[]}
+{"do":"wait","role":"button","name":"Design review · Me (google)","visible":true}
+
+# Left alone, the offer goes after seven seconds and the event stays gone, through a reload too: the stand-in Google
+# deletes nothing, so the event it still lists is one this window keeps out.
+{"do":"click","role":"button","name":"Design review · Me (google)"}
+{"do":"click","role":"button","name":"Delete"}
+{"do":"click","role":"button","name":"Really delete?"}
+{"do":"wait","toasts":["Deleted “Design review”"]}
+{"do":"wait","toasts":[],"timeout_ms":15000}
+{"do":"focus","role":"button","name":"Today"}
+{"do":"key","keys":"r"}
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"wait","role":"button","name":"Design review · Me (google)","visible":false}
+{"do":"quit"}
+# Of the two deletes, the one undone never reached Google, and the other reached it once.
+@gws 1 events	delete

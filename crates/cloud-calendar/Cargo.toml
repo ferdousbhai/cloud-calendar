@@ -4,6 +4,7 @@ description = "Command-line client for Cloud Calendar (iCloud, Google and HEY ca
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "cloud-calendar"

@@ -43,7 +43,8 @@
 {"do":"wait","role":"toggle-button","name":"Agenda","checked":true}
 {"do":"wait","role":"label","name":"Monday 12 October","visible":true}
 {"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
-{"do":"wait","role":"label","name":"06:00–07:00 · Personal (hey)","visible":true}
+# Times are on the language's clock, which is 12 hours in English.
+{"do":"wait","role":"label","name":"06:00 AM–07:00 AM · Personal (hey)","visible":true}
 {"do":"shot","path":"agenda.png"}
 # Fourteen days on, the agenda has none of them.
 {"do":"key","keys":"l"}

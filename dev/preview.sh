@@ -205,4 +205,7 @@ mkdir -p "$(dirname "$screenshot")"
 hyprctl dismissnotify >/dev/null
 /usr/bin/grim -o preview "$screenshot"
 echo "preview: $screenshot"
+# The class Hyprland matches window rules and the .desktop file by: the app's one name, `cloud-calendar`.
+hyprctl clients -j | jq -r '.[] | "preview: window \"\(.title)\" has class \(.class) (\(.initialClass) as it was mapped)"'
+
 [[ ! -s $root/app.log ]] || sed -n '1,20p' "$root/app.log" >&2

@@ -33,4 +33,9 @@
 {"do":"wait","role":"window","name":"Accounts","visible":false}
 {"do":"wait","role":"label","name":"iCloud: icloud-session failed (Failed to connect to address `unix:path=/nonexistent`: No such file or directory (os error 2))","visible":false}
 {"do":"shot","path":"accounts-removed.png"}
+# README.md's picture: the fakes' week with its two working accounts, none of it anyone's own calendar. Keep it with
+#   CLOUD_CALENDAR_QA_SHOTS=docs dev/qa.sh target/debug/cloud-calendar-gtk dev/qa/accounts.jsonl
+@to-fakes
+{"do":"wait","role":"button","name":"Gym · Personal (hey)","visible":true}
+{"do":"shot","path":"screenshot.png"}
 {"do":"quit"}

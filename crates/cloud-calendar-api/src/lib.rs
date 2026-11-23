@@ -8,6 +8,7 @@ pub mod config;
 pub mod error;
 pub mod google;
 pub mod hey;
+pub mod i18n;
 pub mod icloud;
 pub mod notify;
 pub mod provider;

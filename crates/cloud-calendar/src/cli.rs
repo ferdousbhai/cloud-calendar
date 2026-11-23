@@ -7,7 +7,7 @@ use clap::{Args, Parser, Subcommand};
     about = "Your iCloud, Google and HEY calendars in one place, from the terminal",
     long_about = "cloud-calendar reads and changes events across linked calendar accounts: iCloud (through icloud-session), Google (through `gws`) and HEY (through `hey`).\n\
                   Output is human-readable on a terminal and a JSON envelope {ok, data, summary, meta} when piped.\n\
-                  Exit codes: 0 ok, 1 other failure, 2 invalid request, 3 not signed in, not configured or no keyring, 4 not found, 5 an account is unreachable.",
+                  Exits 0 on success and 1 on any failure; errors go to stderr, as {ok: false, error: {code, message}} unless output is text. The code says what failed: usage, bad_request, not_configured, account_unauthorized, keyring_unavailable, not_found, account_unavailable.",
     disable_help_subcommand = true
 )]
 pub struct Cli {
@@ -39,6 +39,8 @@ pub struct GlobalArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Open the desktop app's window (or bring it to the front)
+    Open,
     /// Show the config file and whether each account is signed in and reachable
     Status,
     /// Link, sign in to and unlink calendar accounts

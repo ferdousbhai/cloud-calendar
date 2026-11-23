@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install Cloud Calendar (the cloud-calendar CLI and the cloud-calendar-gtk app)
+# Install Cloud Calendar (the cloud-calendar command and its window, `cloud-calendar open`)
 # from its signed package repository, and keep it updating with the system:
 #
 #   curl -fsSL https://github.com/ferdousbhai/cloud-calendar/releases/latest/download/install.sh | sudo bash

@@ -1,0 +1,46 @@
+name: Check
+# Every push gets what bin/check runs before one: rustfmt, clippy, the unit tests, the CLI's tests on its fakes, the
+# app's windows driven on a private broadway display (any GTK warning fails it) and the installer tests. It runs on
+# Arch, which is what the app is built for and packaged on; packages.yml builds the packages themselves for a tag.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 30
+    env:
+      # Under target, so that one cache holds the crates and what was compiled from them.
+      CARGO_HOME: ${{ github.workspace }}/target/ci-cargo
+    steps:
+      # gtk4 brings gtk4-broadwayd for the window QA, dbus the daemon the CLI's tests start, and the container has
+      # no font at all until one is installed. bin/check fails, rather than skips, when GTK is missing.
+      - name: Install what the checks need
+        run: pacman -Syu --noconfirm --needed base-devel rust git gtk4 dbus python ttf-dejavu
+      # English is written as en_US.UTF-8 in the app (omui's i18n), as on every Omarchy install; the container has
+      # no locale generated, and the QA's times would fall back to the C locale's.
+      - name: Generate the en_US.UTF-8 locale
+        run: |
+          sed -i 's/^#\(en_US\.UTF-8 UTF-8\)/\1/' /etc/locale.gen
+          locale-gen
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: check-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            check-
+      # As a regular user, as the package's own check runs: root would pass tests about files it may not read.
+      - name: bin/check
+        run: |
+          useradd -m builder
+          chown -R builder:builder .
+          su builder -c bin/check

@@ -4,12 +4,13 @@ description = "Native GTK4 app for Cloud Calendar"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 cloud-calendar-api.workspace = true
 chrono.workspace = true
 # The look, the icons and the shared widgets, pinned by commit.
-omui = { git = "https://github.com/ferdousbhai/omui", rev = "d5796183fdcc1dab218c7af5343bc0f29389db0e" } # v0.5.7
+omui = { git = "https://github.com/ferdousbhai/omui", rev = "40737b7a74567654fc3fa7ac8c1037b42255afd4" } # v0.6.0
 # The GTK 4 omui is built on; cargo resolves both to one gtk4.
 gtk = { version = "0.11", package = "gtk4", features = ["v4_16"] }
 serde_json.workspace = true

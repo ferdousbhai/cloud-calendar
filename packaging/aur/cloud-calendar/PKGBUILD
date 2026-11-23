@@ -39,11 +39,14 @@ check() {
 package() {
   cd "$(_srcdir)"
   install -Dm755 "${CARGO_TARGET_DIR:-target}/release/cloud-calendar" "$pkgdir/usr/bin/cloud-calendar"
-  install -Dm755 "${CARGO_TARGET_DIR:-target}/release/cloud-calendar-gtk" "$pkgdir/usr/bin/cloud-calendar-gtk"
-  install -Dm644 crates/cloud-calendar-gtk/data/com.ferdousbhai.CloudCalendar.desktop \
-    "$pkgdir/usr/share/applications/com.ferdousbhai.CloudCalendar.desktop"
-  install -Dm644 crates/cloud-calendar-gtk/data/com.ferdousbhai.CloudCalendar.svg \
-    "$pkgdir/usr/share/icons/hicolor/scalable/apps/com.ferdousbhai.CloudCalendar.svg"
+  # One name: `cloud-calendar open` runs the window's binary, which is the CLI's helper rather than a command of its own.
+  install -Dm755 "${CARGO_TARGET_DIR:-target}/release/cloud-calendar-gtk" "$pkgdir/usr/lib/cloud-calendar/cloud-calendar-gtk"
+  # The old command, for key bindings and older notifications that still run it; it runs `cloud-calendar open`.
+  install -Dm755 packaging/compat/cloud-calendar-gtk "$pkgdir/usr/bin/cloud-calendar-gtk"
+  install -Dm644 crates/cloud-calendar-gtk/data/cloud-calendar.desktop \
+    "$pkgdir/usr/share/applications/cloud-calendar.desktop"
+  install -Dm644 crates/cloud-calendar-gtk/data/cloud-calendar.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/cloud-calendar.svg"
   install -Dm644 -t "$pkgdir/usr/lib/systemd/user" \
     packaging/systemd/cloud-calendar-notify.service packaging/systemd/cloud-calendar-notify.timer
   install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" LICENSE THIRD_PARTY_NOTICES.md

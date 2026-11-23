@@ -206,5 +206,24 @@ done
     def test_signing_failure(self): self.run_release('signing')
 
 
+class CompatibilityLauncherTests(unittest.TestCase):
+    """The window's old command, `cloud-calendar-gtk`, stays on PATH for key bindings and older notifications."""
+
+    def test_package_installs_the_old_command(self):
+        recipe = (ROOT / 'packaging/aur/cloud-calendar/PKGBUILD').read_text()
+        self.assertIn('install -Dm755 packaging/compat/cloud-calendar-gtk "$pkgdir/usr/bin/cloud-calendar-gtk"', recipe)
+
+    def test_old_command_opens_the_window_through_the_one_name(self):
+        # The launcher runs the `cloud-calendar` installed beside it, so a stand-in there records what it was asked.
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory)
+            launcher = bin_dir / 'cloud-calendar-gtk'
+            launcher.write_bytes((ROOT / 'packaging/compat/cloud-calendar-gtk').read_bytes())
+            launcher.chmod(0o755)
+            executable(bin_dir / 'cloud-calendar', 'printf "%s\\n" "$@"\n')
+            result = subprocess.run([str(launcher)], capture_output=True, text=True, check=True)
+            self.assertEqual(result.stdout, 'open\n')
+
+
 if __name__ == '__main__':
     unittest.main()

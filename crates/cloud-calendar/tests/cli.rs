@@ -81,7 +81,8 @@ impl Home {
         child.wait_with_output().unwrap()
     }
 
-    /// Runs with `--json`: the envelope and the exit code.
+    /// Runs with `--json`: the envelope and the exit code. A success's envelope is all of stdout; a failure's is on
+    /// stderr, with nothing on stdout, and its exit code is 1 whatever went wrong.
     fn json(&self, args: &[&str], env: &[(&str, &str)]) -> (Value, i32) {
         self.json_in(args, "", env)
     }
@@ -90,14 +91,26 @@ impl Home {
         let mut all = vec!["--json"];
         all.extend(args);
         let out = self.run(&all, stdin, env);
-        let v = serde_json::from_slice(&out.stdout).unwrap_or_else(|_| {
+        let code = out.status.code().unwrap_or(-1);
+        assert!(matches!(code, 0 | 1), "exit status {code} is neither 0 nor 1");
+        let envelope = if code == 0 {
+            &out.stdout
+        } else {
+            assert!(
+                out.stdout.is_empty(),
+                "a failure wrote to stdout: {}",
+                String::from_utf8_lossy(&out.stdout)
+            );
+            &out.stderr
+        };
+        let v = serde_json::from_slice(envelope).unwrap_or_else(|_| {
             panic!(
                 "not JSON: {}\nstderr: {}",
                 String::from_utf8_lossy(&out.stdout),
                 String::from_utf8_lossy(&out.stderr)
             )
         });
-        (v, out.status.code().unwrap_or(-1))
+        (v, code)
     }
 
     fn link_google(&self) {
@@ -236,7 +249,7 @@ fn icloud_signs_in_through_icloud_session_and_reads_the_web_calendar() {
 fn icloud_without_icloud_session_says_to_install_it() {
     let home = Home::with("no-session", false, false);
     let (v, code) = home.json(&["account", "add", "icloud"], &[]);
-    assert_eq!(code, 3, "{v}");
+    assert_eq!((code, v["error"]["code"].as_str()), (1, Some("not_configured")), "{v}");
     assert!(
         v["error"]["message"]
             .as_str()
@@ -315,7 +328,7 @@ fn icloud_add_change_delete() {
     );
     assert_eq!(
         (code, v["error"]["code"].as_str()),
-        (2, Some("bad_request")),
+        (1, Some("bad_request")),
         "read-only calendars refuse"
     );
 
@@ -366,7 +379,7 @@ fn icloud_add_change_delete() {
         &["event", "edit", "icloud:home/standup~20261013T080000Z", "--title", "x"],
         &[],
     );
-    assert_eq!(code, 2, "{v}");
+    assert_eq!((code, v["error"]["code"].as_str()), (1, Some("bad_request")), "{v}");
     assert!(v["error"]["message"].as_str().unwrap().contains("repeating"));
 
     let (v, code) = home.json(&["event", "delete", &id, "--yes"], &[]);
@@ -382,7 +395,7 @@ fn icloud_add_change_delete() {
     );
     assert!(!home.web.events.lock().unwrap().contains_key(&guid));
     let (v, code) = home.json(&["event", "delete", &id, "--yes"], &[]);
-    assert_eq!((code, v["error"]["code"].as_str()), (4, Some("not_found")));
+    assert_eq!((code, v["error"]["code"].as_str()), (1, Some("not_found")));
 }
 
 #[test]
@@ -480,7 +493,11 @@ fn google_signs_in_with_the_built_in_client() {
 fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     let home = Home::new("hey", true);
     let (v, code) = home.json(&["account", "add", "hey"], &[("FAKE_HEY_STORAGE", "file")]);
-    assert_eq!(code, 3, "{v}");
+    assert_eq!(
+        (code, v["error"]["code"].as_str()),
+        (1, Some("account_unauthorized")),
+        "{v}"
+    );
     assert!(v["error"]["message"].as_str().unwrap().contains("plain file"));
     let (v, code) = home.json(&["account", "add", "hey"], &[("HEY_NO_KEYRING", "1")]);
     assert_eq!(code, 0, "HEY_NO_KEYRING never reaches hey: {v}");
@@ -519,16 +536,24 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     );
     assert_eq!(code, 0, "{v}");
     let (v, code) = home.json(&["event", "edit", "hey:500~20261013T060000Z", "--title", "Gym!"], &[]);
-    assert_eq!(code, 2, "a repeating HEY event is read-only: {v}");
+    assert_eq!(
+        (code, v["error"]["code"].as_str()),
+        (1, Some("bad_request")),
+        "a repeating HEY event is read-only: {v}"
+    );
     let (v, code) = home.json(
         &["event", "edit", "hey:401@2026-10-14", "--start", "2026-10-14 13:00"],
         &[],
     );
-    assert_eq!(code, 2, "a HEY move names both ends: {v}");
+    assert_eq!(
+        (code, v["error"]["code"].as_str()),
+        (1, Some("bad_request")),
+        "a HEY move names both ends: {v}"
+    );
     // Without the day it starts on, hey looks only a year either side of today: its error and
     // hint come through (hey writes them to stderr).
     let (v, code) = home.json(&["event", "edit", "hey:403", "--title", "Far"], &[]);
-    assert_eq!(code, 4, "{v}");
+    assert_eq!((code, v["error"]["code"].as_str()), (1, Some("not_found")), "{v}");
     assert!(
         v["error"]["message"]
             .as_str()
@@ -561,7 +586,11 @@ fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-20", "--title", "Lunch moved"], &[]);
     assert_eq!(code, 0, "the returned ID finds the moved event: {v}");
     let (v, code) = home.json(&["event", "edit", "hey:401@2026-10-14", "--title", "Stale"], &[]);
-    assert_eq!(code, 4, "the old day no longer finds it: {v}");
+    assert_eq!(
+        (code, v["error"]["code"].as_str()),
+        (1, Some("not_found")),
+        "the old day no longer finds it: {v}"
+    );
     let (v, code) = home.json(&["event", "delete", "hey:500~20261013T060000Z", "--yes"], &[]);
     assert_eq!(code, 0, "{v}");
     let writes: Vec<String> = home
@@ -689,7 +718,8 @@ fn notifications_go_out_once() {
         "{}",
         fields[7]
     );
-    assert_eq!(&fields[8..], &["--exec", "cloud-calendar-gtk"]);
+    // A click opens the window by the app's one name.
+    assert_eq!(&fields[8..], &["--exec", "cloud-calendar", "open"]);
     // A minute later: from the cache, and nothing twice.
     let weeks = |h: &Home| {
         h.file("hey.log")
@@ -715,7 +745,7 @@ fn agenda_days_must_be_in_range() {
     let home = Home::new("days", true);
     for days in ["0", "367"] {
         let (v, code) = home.json(&["agenda", "--days", days], &[]);
-        assert_eq!((code, v["error"]["code"].as_str()), (2, Some("bad_request")), "{v}");
+        assert_eq!((code, v["error"]["code"].as_str()), (1, Some("bad_request")), "{v}");
     }
 }
 
@@ -767,7 +797,7 @@ fn out_of_range_dates_and_lengths_are_refused() {
         let (v, code) = home.json(args, &[]);
         assert_eq!(
             (code, v["error"]["code"].as_str()),
-            (2, Some("bad_request")),
+            (1, Some("bad_request")),
             "{args:?}: {v}"
         );
     }
@@ -798,10 +828,125 @@ fn accounts_linked_at_once_both_stay() {
 }
 
 #[test]
-fn usage_errors_are_json_with_exit_2_when_piped() {
+fn usage_errors_are_json_on_stderr_with_exit_1_when_piped() {
     let home = Home::new("usage", false);
     let (v, code) = home.json(&["no-such-command"], &[]);
-    assert_eq!(code, 2, "{v}");
+    assert_eq!(code, 1, "{v}");
     assert_eq!(v["error"]["code"], "usage", "{v}");
     assert!(v["error"]["hint"].as_str().unwrap().contains("--help"), "{v}");
+}
+
+/// Every failure exits 1 with stdout empty, so a pipeline never reads an error as data: as text with `--styled`
+/// (clap's usage errors included, which would otherwise exit 2), and as a JSON error on stderr with `--quiet`.
+#[test]
+fn failures_exit_1_on_stderr_in_every_mode() {
+    let home = Home::new("failures", false);
+    for (args, kind) in [
+        (&["--styled", "no-such-command"][..], None),
+        (&["--styled", "agenda", "--days", "0"], None),
+        (&["--quiet", "agenda", "--days", "0"], Some("bad_request")),
+        (
+            &["--ids-only", "event", "edit", "hey:1", "--title", "x"],
+            Some("not_configured"),
+        ),
+    ] {
+        let out = home.run(args, "", &[]);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "{args:?}: {stderr}");
+        assert!(
+            out.stdout.is_empty(),
+            "{args:?} wrote to stdout: {}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        match kind {
+            None => assert!(stderr.starts_with("error:"), "{args:?}: {stderr}"),
+            Some(kind) => {
+                let v: Value = serde_json::from_str(&stderr).unwrap_or_else(|_| panic!("{args:?}: not JSON: {stderr}"));
+                assert_eq!(
+                    (v["ok"].as_bool(), v["error"]["code"].as_str()),
+                    (Some(false), Some(kind)),
+                    "{args:?}"
+                );
+            }
+        }
+    }
+    let out = home.run(&["--help"], "", &[]);
+    assert_eq!(out.status.code(), Some(0), "help is a success");
+}
+
+/// A stand-in for the desktop app's binary (`tests/fake-app`), which writes down in `app.log` that it ran, and with
+/// what. It and every other program the tests run are checked in, never written by a test: a test that wrote one and
+/// ran it would race another test's fork holding the write end open, and fail with ETXTBSY ("Text file busy").
+fn fake_app(home: &Home) -> (PathBuf, PathBuf) {
+    (
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake-app"),
+        home.dir.join("app.log"),
+    )
+}
+
+/// `cloud-calendar open` is the window: it becomes the app's binary, which the command line never links.
+#[test]
+fn open_runs_the_desktop_app() {
+    let home = Home::new("open", true);
+    let (app, log) = fake_app(&home);
+    let out = home.run(
+        &["open"],
+        "",
+        &[
+            ("CLOUD_CALENDAR_GTK_BINARY", app.to_str().unwrap()),
+            ("FAKE_APP_LOG", log.to_str().unwrap()),
+        ],
+    );
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(home.file("app.log"), "ran \n");
+    // Without the app it says where it looked, on stderr, and exits 1.
+    let missing = home.dir.join("no-such-app");
+    let (v, code) = home.json(&["open"], &[("CLOUD_CALENDAR_GTK_BINARY", missing.to_str().unwrap())]);
+    assert_eq!((code, v["error"]["code"].as_str()), (1, Some("not_configured")), "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("no-such-app"), "{v}");
+}
+
+/// The window's old command still opens it, for the key bindings and older notifications that run it: the package
+/// installs packaging/compat/cloud-calendar-gtk beside `cloud-calendar`, and it runs `cloud-calendar open`.
+#[test]
+fn the_old_command_opens_the_window() {
+    let home = Home::new("old-command", true);
+    let (app, log) = fake_app(&home);
+    let bin = home.dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_cloud-calendar"), bin.join("cloud-calendar")).unwrap();
+    let shim = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/compat/cloud-calendar-gtk");
+    // Linked, not copied: the shim runs the `cloud-calendar` beside the name it was run by.
+    std::os::unix::fs::symlink(shim, bin.join("cloud-calendar-gtk")).unwrap();
+    let out = Command::new(bin.join("cloud-calendar-gtk"))
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", &home.dir)
+        .env("XDG_CONFIG_HOME", home.dir.join("config"))
+        .env("CLOUD_CALENDAR_GTK_BINARY", &app)
+        .env("FAKE_APP_LOG", &log)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(home.file("app.log"), "ran \n");
+}
+
+/// Help and the version need no display, and the command line links no GTK: only `open` reaches the window.
+#[test]
+fn help_and_version_need_no_display_and_no_gtk() {
+    let home = Home::new("help", true);
+    for args in [&["--help"][..], &["--version"], &["open", "--help"]] {
+        let out = home.run(args, "", &[]);
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(!out.stdout.is_empty(), "{args:?} printed nothing");
+    }
+    let help = String::from_utf8(home.run(&["--help"], "", &[]).stdout).unwrap();
+    assert!(help.contains("open"), "{help}");
+    let binary = std::fs::read(env!("CARGO_BIN_EXE_cloud-calendar")).unwrap();
+    let links = |library: &[u8]| binary.windows(library.len()).any(|w| w == library);
+    assert!(!links(b"libgtk-4.so"), "the command line links GTK");
 }

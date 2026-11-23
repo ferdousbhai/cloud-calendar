@@ -1,0 +1,5 @@
+#!/bin/sh
+# The window's old command. Cloud Calendar now has one name, `cloud-calendar`, and `cloud-calendar open` opens its
+# window; this keeps what still runs the old name working: a key binding in hyprland's config, and a notification
+# sent by an older version, whose click runs `cloud-calendar-gtk`. It runs the `cloud-calendar` beside it.
+exec "$(dirname -- "$0")/cloud-calendar" open

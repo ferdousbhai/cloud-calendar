@@ -1,0 +1,3 @@
+#!/bin/sh
+# A stand-in for the desktop app's binary: writes down that it ran, and with what, and ends.
+printf 'ran %s\n' "$*" >> "${FAKE_APP_LOG:?}"

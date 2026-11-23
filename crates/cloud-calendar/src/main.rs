@@ -58,13 +58,19 @@ impl Out {
     }
 }
 
-fn exit_code(kind: ErrorKind) -> i32 {
-    match kind {
-        ErrorKind::BadRequest => 2,
-        ErrorKind::Config | ErrorKind::AccountAuth | ErrorKind::KeyringUnavailable => 3,
-        ErrorKind::NotFound => 4,
-        ErrorKind::AccountUnavailable => 5,
+/// Omarchy's command-line contract: 0 is success and 1 any failure. What went wrong is the error's `code`
+/// (`ErrorKind::code`, or `usage`), which the JSON error on stderr carries, not the exit status.
+const FAILURE: i32 = 1;
+
+/// Writes a failure to stderr, as JSON unless output is text, and exits 1. stdout carries only successful output, so
+/// a caller that pipes it never mistakes an error for data.
+fn fail(json: bool, error: Value) -> ! {
+    if json {
+        eprintln!("{}", json!({ "ok": false, "error": error }));
+    } else {
+        eprintln!("error: {}", error["message"].as_str().unwrap_or_default());
     }
+    std::process::exit(FAILURE);
 }
 
 const SKILL: agent_skill::Skill = agent_skill::Skill {
@@ -75,7 +81,8 @@ const SKILL: agent_skill::Skill = agent_skill::Skill {
     adopts_legacy: false,
 };
 
-/// Parses the command line; a usage error is a JSON error (code `usage`, exit 2) unless output is text.
+/// Parses the command line; a usage error is a JSON error (code `usage`) on stderr unless output is text, and exits 1
+/// either way. Help and the version are successes.
 fn parse() -> Cli {
     match Cli::try_parse() {
         Ok(cli) => cli,
@@ -84,8 +91,13 @@ fn parse() -> Cli {
             let raw: Vec<String> = std::env::args().skip(1).collect();
             let text = raw.iter().any(|a| a == "--styled")
                 || (std::io::stdout().is_terminal() && !raw.iter().any(|a| a == "--json"));
-            if text || matches!(e.kind(), Clap::DisplayHelp | Clap::DisplayVersion) {
+            if matches!(e.kind(), Clap::DisplayHelp | Clap::DisplayVersion) {
                 e.exit();
+            }
+            if text {
+                // clap's own rendering, with its suggestions, but not its exit status 2.
+                let _ = e.print();
+                std::process::exit(FAILURE);
             }
             let rendered = e.render().to_string();
             let message = rendered
@@ -95,11 +107,7 @@ fn parse() -> Cli {
                 .trim_start_matches("error: ")
                 .trim();
             let hint = "run `cloud-calendar --help` or `cloud-calendar <command> --help`";
-            println!(
-                "{}",
-                json!({ "ok": false, "error": { "code": "usage", "message": message, "hint": hint } })
-            );
-            std::process::exit(2);
+            fail(true, json!({ "code": "usage", "message": message, "hint": hint }));
         }
     }
 }
@@ -143,17 +151,10 @@ fn main() {
                 }
             }
         }
-        Err(e) => {
-            if mode == Mode::Human {
-                eprintln!("error: {}", e.message);
-            } else {
-                println!(
-                    "{}",
-                    json!({ "ok": false, "error": { "code": e.kind.code(), "message": e.message } })
-                );
-            }
-            std::process::exit(exit_code(e.kind));
-        }
+        Err(e) => fail(
+            mode != Mode::Human,
+            json!({ "code": e.kind.code(), "message": e.message }),
+        ),
     }
 }
 
@@ -179,6 +180,7 @@ fn need_accounts(c: &Calendars) -> api::Result<()> {
 
 fn run(command: Command) -> api::Result<Out> {
     match command {
+        Command::Open => open_window(),
         Command::Status => status(),
         Command::Account(a) => account(a),
         Command::Calendars => {
@@ -228,6 +230,48 @@ fn run(command: Command) -> api::Result<Out> {
             Ok(out)
         }
     }
+}
+
+/// Where the desktop app's binary is, for `open`: `CLOUD_CALENDAR_GTK_BINARY` when set (the tests' stand-in), else
+/// under `lib/cloud-calendar/` beside this command's `bin/` (`/usr/lib/cloud-calendar/cloud-calendar-gtk` for
+/// `/usr/bin/cloud-calendar`), else next to this command, as `cargo build` leaves the two in `target/`. The package's
+/// own `/usr/bin/cloud-calendar-gtk` is the old name kept for key bindings, which runs `open`: it is never the one
+/// found, being looked for only after `lib`.
+fn gtk_binary() -> Vec<std::path::PathBuf> {
+    if let Some(binary) = std::env::var_os("CLOUD_CALENDAR_GTK_BINARY").filter(|b| !b.is_empty()) {
+        return vec![binary.into()];
+    }
+    let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+    else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    if let Some(prefix) = dir.parent() {
+        candidates.push(prefix.join("lib/cloud-calendar/cloud-calendar-gtk"));
+    }
+    candidates.push(dir.join("cloud-calendar-gtk"));
+    candidates
+}
+
+/// Becomes the desktop app: the CLI links no GTK, so the window is the app's binary, run in this process's place. It
+/// presents the window that is already open, if there is one. It returns only when the app could not be started.
+fn open_window() -> api::Result<Out> {
+    use std::os::unix::process::CommandExt;
+    let candidates = gtk_binary();
+    let Some(binary) = candidates.iter().find(|b| b.is_file()) else {
+        let looked: Vec<String> = candidates.iter().map(|c| c.display().to_string()).collect();
+        return Err(Error::new(
+            ErrorKind::Config,
+            format!("the desktop app is not installed (looked for {})", looked.join(", ")),
+        ));
+    };
+    let error = std::process::Command::new(binary).exec();
+    Err(Error::new(
+        ErrorKind::Config,
+        format!("could not start the desktop app {}: {error}", binary.display()),
+    ))
 }
 
 fn agenda(range: Range, what: String) -> api::Result<Out> {

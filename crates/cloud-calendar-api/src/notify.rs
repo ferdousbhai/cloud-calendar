@@ -13,6 +13,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use crate::config;
+use crate::i18n::{tr, trn};
 use crate::provider::{AccountWarning, Run, run_command};
 use crate::types::{Event, Range, Time};
 use crate::unified::Calendars;
@@ -150,13 +151,13 @@ pub fn merge_refresh(previous: Vec<Upcoming>, fresh: Vec<Upcoming>, failed: &[St
     out
 }
 
-/// The notification's body: "in 10 min · 14:00–15:00 · Room 2 · Work".
+/// The notification's body: "in 10 min · 14:00–15:00 · Room 2 · Work", its words in Omarchy's language.
 pub fn body(e: &Upcoming, now: DateTime<Utc>) -> String {
     let mins = (e.start - now).num_seconds().max(0).div_euclid(60) + i64::from((e.start - now).num_seconds() % 60 > 0);
     let when = if mins <= 1 {
-        "starting now".to_string()
+        tr("starting now")
     } else {
-        format!("in {mins} min")
+        trn("in {n} min", mins)
     };
     let (s, t) = (e.start.with_timezone(&Local), e.end.with_timezone(&Local));
     let mut parts = vec![when, format!("{}–{}", s.format("%H:%M"), t.format("%H:%M"))];
@@ -169,7 +170,7 @@ pub fn body(e: &Upcoming, now: DateTime<Utc>) -> String {
     parts.join(" · ")
 }
 
-/// Shows one notification; clicking it opens the app. `CLOUD_CALENDAR_NOTIFY_COMMAND` names
+/// Shows one notification; clicking it opens the app's window (`cloud-calendar open`). `CLOUD_CALENDAR_NOTIFY_COMMAND` names
 /// another program taking the same arguments (the tests' recorder).
 pub fn send(title: &str, body: &str) -> Result<(), String> {
     let program = std::env::var(COMMAND_ENV)
@@ -186,7 +187,8 @@ pub fn send(title: &str, body: &str) -> Result<(), String> {
         title,
         body,
         "--exec",
-        "cloud-calendar-gtk",
+        "cloud-calendar",
+        "open",
     ];
     match run_command(Command::new(&program).args(args), None, Duration::from_secs(15)) {
         Run::Done { status, .. } if status.success() => Ok(()),
