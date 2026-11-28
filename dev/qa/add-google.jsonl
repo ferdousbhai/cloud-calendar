@@ -1,0 +1,20 @@
+# The Accounts window's Google button links one more Google account each time, and not the same address twice.
+# dev/qa.sh runs it (bin/check runs all). The stand-in gws signs in at once as me@gmail.com: no browser opens.
+{"do":"wait","role":"label","name":"iCloud: icloud-session failed (Failed to connect to address `unix:path=/nonexistent`: No such file or directory (os error 2))","visible":true}
+{"do":"click","role":"button","name":"Manage accounts"}
+{"do":"wait","role":"window","name":"Accounts","visible":true}
+{"do":"wait","role":"label","name":"✓ Google (google)","visible":true}
+# google is taken, so the new account is google-2, and it says which address it is.
+{"do":"click","role":"button","name":"Google"}
+{"do":"wait","role":"label","name":"signed in to Google as me@gmail.com","visible":true}
+{"do":"wait","role":"label","name":"✓ Google (google-2)","visible":true}
+{"do":"wait","role":"button","name":"Remove google-2","visible":true}
+# Once more signs in to the same address, which is refused: nothing is linked.
+{"do":"click","role":"button","name":"Google"}
+{"do":"wait","role":"label","name":"me@gmail.com is already linked here as google-2: choose another Google account in the browser","visible":true}
+{"do":"wait","role":"label","name":"✓ Google (google-2)","visible":true}
+{"do":"wait","role":"button","name":"Google","sensitive":true}
+@gws 2 ^auth	login
+{"do":"key","keys":"Escape"}
+{"do":"wait","role":"window","name":"Accounts","visible":false}
+{"do":"quit"}
