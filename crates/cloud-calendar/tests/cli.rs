@@ -489,6 +489,119 @@ fn google_signs_in_with_the_built_in_client() {
     );
 }
 
+/// A Google sign-in as fake-gws keeps one, in another Cloud app's directory.
+fn sibling_sign_in(home: &Home, app_account: &str, status: &str) {
+    let dir = home.dir.join("config").join(app_account);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(".encryption_key"), "key").unwrap();
+    std::fs::write(dir.join("credentials.enc"), status).unwrap();
+}
+
+const ALL_SCOPES: &str = r#""https://www.googleapis.com/auth/gmail.modify","https://www.googleapis.com/auth/calendar.events","https://www.googleapis.com/auth/calendar.calendarlist.readonly""#;
+
+#[test]
+fn google_takes_over_another_cloud_apps_sign_in() {
+    let home = Home::new("google-adopt", true);
+    let builtin = [
+        ("CLOUD_CALENDAR_GOOGLE_CLIENT_ID", ""),
+        ("CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET", ""),
+        ("FAKE_GWS_SECRET", cloud_calendar_api::google::GOOGLE_CLIENT_SECRET),
+    ];
+    let logins = |home: &Home| {
+        home.file("gws.log")
+            .lines()
+            .filter(|l| l.starts_with("auth\tlogin"))
+            .count()
+    };
+    let status = format!(r#"{{"token_valid":true,"user":"Sam@Gmail.com","scopes":[{ALL_SCOPES}]}}"#);
+    sibling_sign_in(&home, "cloudmail/gws/gmail", &status);
+    // One Google no longer takes, and one without the calendar permissions: neither counts.
+    sibling_sign_in(
+        &home,
+        "cloud-contacts/gws/google",
+        r#"{"token_valid":false,"token_error":"Token has been expired or revoked."}"#,
+    );
+    sibling_sign_in(
+        &home,
+        "cloud-contacts/gws/work",
+        r#"{"token_valid":true,"user":"other@gmail.com","scopes":["https://www.googleapis.com/auth/contacts"]}"#,
+    );
+
+    let (v, code) = home.json(&["account", "add", "google"], &builtin);
+    assert_eq!(code, 0, "{v}");
+    assert!(
+        v["summary"]
+            .as_str()
+            .unwrap()
+            .contains("as sam@gmail.com, with Cloudmail's sign-in"),
+        "{v}"
+    );
+    assert_eq!(logins(&home), 0, "no browser sign-in");
+    let own = home.dir.join("config/cloud-calendar/gws/google");
+    assert_eq!(std::fs::read_to_string(own.join("credentials.enc")).unwrap(), status);
+    assert_eq!(std::fs::read_to_string(own.join(".encryption_key")).unwrap(), "key");
+    let (v, code) = home.json(&["calendars"], &builtin);
+    assert_eq!(code, 0, "{v}");
+
+    // That address is linked here now, so a second account signs in in the browser, asking for
+    // what the three apps use.
+    let (v, code) = home.json(&["account", "add", "google", "--name", "work"], &builtin);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(logins(&home), 1);
+    assert!(
+        home.file("gws.log").lines().any(|l| l.starts_with("auth\tlogin")
+            && l.contains("auth/gmail.modify")
+            && l.contains("auth/calendar.events")
+            && l.contains("auth/contacts")),
+        "{}",
+        home.file("gws.log")
+    );
+
+    // Signing in again to an account whose sign-in works is a browser sign-in: the way to another address.
+    let (v, code) = home.json(&["account", "login", "google"], &builtin);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(logins(&home), 2);
+
+    // Unlinking removes the copy only.
+    let (v, code) = home.json(&["account", "remove", "google", "--yes"], &builtin);
+    assert_eq!(code, 0, "{v}");
+    assert!(home.dir.join("config/cloudmail/gws/gmail/credentials.enc").is_file());
+}
+
+#[test]
+fn google_asks_in_the_browser_when_two_addresses_could_be_taken_over() {
+    let home = Home::new("google-adopt-two", true);
+    let builtin = [
+        ("CLOUD_CALENDAR_GOOGLE_CLIENT_ID", ""),
+        ("CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET", ""),
+        ("FAKE_GWS_SECRET", cloud_calendar_api::google::GOOGLE_CLIENT_SECRET),
+    ];
+    for (dir, user) in [
+        ("cloudmail/gws/gmail", "sam@gmail.com"),
+        ("cloud-contacts/gws/google", "work@example.com"),
+    ] {
+        sibling_sign_in(
+            &home,
+            dir,
+            &format!(r#"{{"token_valid":true,"user":"{user}","scopes":[{ALL_SCOPES}]}}"#),
+        );
+    }
+    let (v, code) = home.json(&["account", "add", "google"], &builtin);
+    assert_eq!(code, 0, "{v}");
+    assert!(!v["summary"].as_str().unwrap().contains("with "), "{v}");
+    assert!(home.file("gws.log").lines().any(|l| l.starts_with("auth\tlogin")));
+
+    // A client of your own never takes over a sign-in made with the built-in one.
+    let home = Home::new("google-adopt-own-client", true);
+    sibling_sign_in(
+        &home,
+        "cloudmail/gws/gmail",
+        &format!(r#"{{"token_valid":true,"user":"sam@gmail.com","scopes":[{ALL_SCOPES}]}}"#),
+    );
+    home.link_google();
+    assert!(home.file("gws.log").lines().any(|l| l.starts_with("auth\tlogin")));
+}
+
 #[test]
 fn hey_insists_on_the_keyring_and_writes_through_the_cli() {
     let home = Home::new("hey", true);

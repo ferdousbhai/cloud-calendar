@@ -15,9 +15,15 @@
 //! "file" backend is used, which is what gws does on Linux anyway, without touching the one
 //! keyring entry a gws of your own uses.
 //!
-//! Sign-in: `gws auth login --scopes <calendar.events, calendar.calendarlist.readonly>` with
-//! Cloud Calendar's built-in Google OAuth client (see `GOOGLE_CLIENT_ID`), as cloud-mail signs in
-//! to Gmail: one browser sign-in, nothing to set up in Google Cloud.
+//! Sign-in: `gws auth login --scopes <SIGN_IN_SCOPES>` with Cloud Calendar's built-in Google OAuth
+//! client (see `GOOGLE_CLIENT_ID`), as cloud-mail signs in to Gmail: one browser sign-in, nothing
+//! to set up in Google Cloud.
+//!
+//! One sign-in for the Cloud apps: Cloudmail, Cloud Calendar and Cloud Contacts sign in with the
+//! same client and each asks Google for what all three use (`SIGN_IN_SCOPES`). Before opening the
+//! browser, an account that isn't signed in looks at the other two apps' gws directories and, when
+//! one address there works and covers `SCOPES`, copies gws's two files from it (`adopt`). It is a
+//! copy: each app's directory stays its own, and signing out of one app leaves the others signed in.
 //!
 //! IDs: a calendar is `google:<calendarId>`, an event `google:<calendarId>/<eventId>`; listings
 //! expand repeating events (`singleEvents`), and an occurrence's edits and deletes go to its series
@@ -47,10 +53,21 @@ pub const CLIENT_ID_ENV: &str = "CLOUD_CALENDAR_GOOGLE_CLIENT_ID";
 pub const CLIENT_SECRET_ENV: &str = "CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET";
 /// The program that opens the sign-in link (default: xdg-open).
 pub const BROWSER_ENV: &str = "CLOUD_CALENDAR_BROWSER";
-/// Events on your calendars, and the list of calendars; nothing else in your Google account.
-pub const SCOPES: &str =
-    "https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+/// What Cloud Calendar uses: events on your calendars, and the list of calendars.
+pub const SCOPES: [&str; 2] = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+];
+/// What the browser sign-in asks for: `SCOPES`, Cloudmail's (Gmail and its filters) and Cloud
+/// Contacts', so the sign-in serves all three apps. The same list is in each of them.
+pub const SIGN_IN_SCOPES: &str = "https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/gmail.settings.basic,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/calendar.calendarlist.readonly,https://www.googleapis.com/auth/contacts";
+/// The other Cloud apps whose Google sign-in can be taken over: the directory under
+/// `~/.config` that holds their `gws/<account>`, and the app's name.
+const SIBLINGS: [(&str, &str); 2] = [("cloudmail", "Cloudmail"), ("cloud-contacts", "Cloud Contacts")];
 pub const INSTALL_HINT: &str = "install Google's Workspace CLI: `npm install -g @googleworkspace/cli` (or a release binary from https://github.com/googleworkspace/cli/releases)";
+
+/// The key gws encrypts `credentials.enc` with, beside it.
+const KEY_FILE: &str = ".encryption_key";
 
 const TIMEOUT: Duration = Duration::from_secs(90);
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(600);
@@ -66,6 +83,11 @@ pub struct Google {
 
 fn text(v: &Value) -> String {
     v.as_str().unwrap_or_default().trim().to_string()
+}
+
+/// Whether a sign-in's permissions include all of `SCOPES`.
+fn covers(scopes: &[String]) -> bool {
+    SCOPES.iter().all(|s| scopes.iter().any(|g| g == s))
 }
 
 fn nonblank(v: Option<String>) -> Option<String> {
@@ -166,25 +188,114 @@ impl Google {
     }
 
     fn gws(&self) -> Command {
+        self.gws_in(&self.dir)
+    }
+
+    /// `gws` confined to a gws directory: this account's, or another Cloud app's to read its sign-in.
+    fn gws_in(&self, dir: &Path) -> Command {
         let (id, secret) = &self.client;
         let mut cmd = Command::new(&self.command);
         // gws also reads a .env from its working directory.
-        cmd.current_dir(if self.dir.is_dir() {
-            self.dir.clone()
+        cmd.current_dir(if dir.is_dir() {
+            dir.to_path_buf()
         } else {
             std::env::temp_dir()
         })
-        .env("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", &self.dir)
+        .env("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", dir)
         .env("GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND", "file")
         .env(
             "GOOGLE_APPLICATION_CREDENTIALS",
-            self.dir.join("no-application-default-credentials.json"),
+            dir.join("no-application-default-credentials.json"),
         )
         .env_remove("GOOGLE_WORKSPACE_CLI_TOKEN")
         .env_remove("GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE")
         .env("GOOGLE_WORKSPACE_CLI_CLIENT_ID", id)
         .env("GOOGLE_WORKSPACE_CLI_CLIENT_SECRET", secret);
         cmd
+    }
+
+    /// The sign-in gws keeps in `dir`, as `gws auth status` reports it after asking Google: its
+    /// address and the permissions it has. None when there is none or Google no longer takes it.
+    fn sign_in_at(&self, dir: &Path) -> Option<(String, Vec<String>)> {
+        if !dir.join("credentials.enc").is_file() || !dir.join(KEY_FILE).is_file() {
+            return None;
+        }
+        let Run::Done { status, stdout, .. } = run_command(self.gws_in(dir).args(["auth", "status"]), None, TIMEOUT)
+        else {
+            return None;
+        };
+        let stdout = String::from_utf8_lossy(&stdout);
+        let v: Value = serde_json::from_str(&stdout[stdout.find('{')?..]).ok()?;
+        if !status.success() || v["token_valid"] != true {
+            return None;
+        }
+        let scopes = v["scopes"].as_array()?.iter().map(text).collect();
+        nonblank(Some(text(&v["user"]))).map(|user| (user.to_lowercase(), scopes))
+    }
+
+    /// Whether this account's own sign-in works and covers what Cloud Calendar uses.
+    pub fn works(&self) -> bool {
+        self.sign_in_at(&self.dir).is_some_and(|(_, scopes)| covers(&scopes))
+    }
+
+    /// Takes over the Google sign-in another Cloud app has on this computer, in place of a browser
+    /// sign-in: when the sign-ins there that work, cover `SCOPES` and aren't of an address another
+    /// account here is signed in to are all of one address, gws's two files are copied from the
+    /// first into this account's directory. Returns that address and the app's name. Only with the
+    /// built-in client, which the three apps share.
+    pub fn adopt(&self) -> Option<(String, &'static str)> {
+        if self.client.0 != GOOGLE_CLIENT_ID {
+            return None;
+        }
+        let accounts = |gws: PathBuf| {
+            let mut dirs: Vec<PathBuf> = std::fs::read_dir(gws)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path())
+                .collect();
+            dirs.sort();
+            dirs
+        };
+        let config = crate::config::config_dir();
+        let mut found: Vec<(String, PathBuf, &'static str)> = Vec::new();
+        for (folder, app) in SIBLINGS {
+            for dir in accounts(config.parent()?.join(folder).join("gws")) {
+                if let Some((address, scopes)) = self.sign_in_at(&dir)
+                    && covers(&scopes)
+                {
+                    found.push((address, dir, app));
+                }
+            }
+        }
+        if found.is_empty() {
+            return None;
+        }
+        let here: Vec<String> = accounts(config.join("gws"))
+            .iter()
+            .filter(|dir| **dir != self.dir)
+            .filter_map(|dir| self.sign_in_at(dir).map(|(address, _)| address))
+            .collect();
+        found.retain(|(address, ..)| !here.contains(address));
+        let (address, from, app) = found.first()?.clone();
+        if found.iter().any(|(other, ..)| *other != address) {
+            return None;
+        }
+        crate::config::private_dir(&self.dir).ok()?;
+        // The key first: a sign-in that can't be read is "not signed in", never another's.
+        let _ = std::fs::remove_file(self.dir.join("credentials.enc"));
+        for file in [KEY_FILE, "credentials.enc"] {
+            let tmp = self.dir.join(format!("{file}.adopting"));
+            let copied = std::fs::copy(from.join(file), &tmp).and_then(|_| std::fs::rename(&tmp, self.dir.join(file)));
+            if copied.is_err() {
+                let _ = std::fs::remove_file(&tmp);
+                let _ = std::fs::remove_file(self.dir.join("credentials.enc"));
+                return None;
+            }
+        }
+        // Access tokens gws cached for the sign-in that was here are not this one's.
+        let _ = std::fs::remove_file(self.dir.join("token_cache.json"));
+        Some((address, app))
     }
 
     /// Google's browser sign-in through `gws auth login`: gws prints a link, opened here in the
@@ -198,7 +309,7 @@ impl Google {
             )
         })?;
         cmd.current_dir(&self.dir)
-            .args(["auth", "login", "--scopes", SCOPES])
+            .args(["auth", "login", "--scopes", SIGN_IN_SCOPES])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

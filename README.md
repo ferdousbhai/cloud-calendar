@@ -82,9 +82,19 @@ npm install -g @googleworkspace/cli
 cloud-calendar account add google      # opens Google's sign-in in your browser, once
 ```
 
-The sign-in asks for your events and your calendar list only. Calendars you've hidden in Google
-Calendar stay hidden here. `gws` keeps the sign-in in Cloud Calendar's own directory
-(`~/.config/cloud-calendar/gws/<name>`), apart from any `gws` you use yourself.
+One sign-in serves [Cloudmail](https://github.com/ferdousbhai/cloud-mail), Cloud Calendar and
+[Cloud Contacts](https://github.com/ferdousbhai/cloud-contacts). When one of the other two is
+already signed in to Google on this computer, `account add google` uses that sign-in and opens no
+browser, and says which address it took. Otherwise the browser sign-in asks for what the three
+apps use (your mail and its filters, your events and calendar list, your contacts), so the other
+two won't ask again; Cloud Calendar itself reads and writes events and reads your calendar list,
+nothing else. To use another Google account than the one it took, run
+`cloud-calendar account login google`: an account that is signed in always gets the browser.
+
+Calendars you've hidden in Google Calendar stay hidden here. `gws` keeps the sign-in in Cloud
+Calendar's own directory (`~/.config/cloud-calendar/gws/<name>`), apart from any `gws` you use
+yourself. A sign-in taken from another Cloud app is a copy kept there too, so removing the account
+in one app leaves the others signed in.
 
 ### HEY
 
@@ -271,6 +281,12 @@ The calendar scopes (`https://www.googleapis.com/auth/calendar.events` and
 `https://www.googleapis.com/auth/calendar.calendarlist.readonly`) aren't listed on the consent
 screen. Sign-in works without that, with the same "Google hasn't verified this app" warning as
 Gmail's; listing them only matters for Google's app verification.
+
+The browser sign-in asks for `SIGN_IN_SCOPES`: Cloud Calendar's scopes, Cloudmail's and Cloud
+Contacts'. The same list is in `cloud-mail/crates/cloudmail-api/src/gmail.rs` and
+`cloud-contacts/crates/cloud-contacts/src/google.rs`; a scope added to one app is added to all
+three, or that app's users get a second browser sign-in. `Google::adopt` is what takes over
+another app's sign-in.
 
 A build can also use its own client with `CLOUD_CALENDAR_GOOGLE_CLIENT_ID` /
 `CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET`.

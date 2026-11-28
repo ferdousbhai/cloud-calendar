@@ -2,7 +2,10 @@
 //!
 //! - iCloud: the one sign-in icloud-session holds for every app. Linking asks it to sign in
 //!   (its own window) when it isn't; unlinking leaves it signed in, since other apps share it.
-//! - Google: `gws auth login` in the browser, with Cloud Calendar's built-in OAuth client.
+//! - Google: the sign-in Cloudmail or Cloud Contacts has on this computer when there is one
+//!   (`Google::adopt`), else `gws auth login` in the browser, with Cloud Calendar's built-in OAuth
+//!   client. An account whose own sign-in works always gets the browser: that is how to change
+//!   to another Google account.
 //! - HEY: `hey auth login` in the browser, kept in the keyring by hey itself.
 
 use std::sync::mpsc;
@@ -88,7 +91,15 @@ fn sign_in(name: &str, cfg: &AccountConfig) -> Result<String> {
                 .unwrap_or_default();
             Ok(format!("signed in to iCloud as {who}"))
         }
-        "google" => Google::new(name, cfg).login().map(|_| "signed in to Google".into()),
+        "google" => {
+            let google = Google::new(name, cfg);
+            if !google.works()
+                && let Some((address, app)) = google.adopt()
+            {
+                return Ok(format!("signed in to Google as {address}, with {app}'s sign-in"));
+            }
+            google.login().map(|_| "signed in to Google".into())
+        }
         "hey" => {
             let hey = Hey::new(name, cfg);
             if !hey.signed_in()? {
