@@ -289,9 +289,9 @@ impl Google {
     /// there that works, covers `SCOPES` and is of the right address. For an account that was
     /// signed in, that is its own address; for a new one, any address no other account here is
     /// signed in to. (A sign-in from before addresses were kept is replaced only when one address
-    /// could be meant.) Returns the address and the app's name. Only with the built-in client,
-    /// which the three apps share.
-    pub fn adopt(&self) -> Option<(String, &'static str)> {
+    /// could be meant.) `want` names the address a new account is for. Returns the address and the
+    /// app's name. Only with the built-in client, which the three apps share.
+    pub fn adopt(&self, want: Option<&str>) -> Option<(String, &'static str)> {
         if self.client.0 != GOOGLE_CLIENT_ID {
             return None;
         }
@@ -321,6 +321,9 @@ impl Google {
             None => {
                 let here = self.others();
                 found.retain(|(address, ..)| !here.iter().any(|(linked, _)| linked == address));
+                if let Some(want) = want {
+                    found.retain(|(address, ..)| address == want);
+                }
                 if self.signed_in() && found.iter().any(|(address, ..)| *address != found[0].0) {
                     return None;
                 }

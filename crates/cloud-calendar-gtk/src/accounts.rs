@@ -228,7 +228,7 @@ pub fn open(ui: &Rc<Ui>) {
             // One more Google account each time: google, then google-2, …
             || {
                 let name = api::accounts::next_name("google")?;
-                api::accounts::add(Some(&name), Link::Google).map(|(_, note)| note)
+                api::accounts::add(Some(&name), Link::Google { address: None }).map(|(_, note)| note)
             }
         )
     ));

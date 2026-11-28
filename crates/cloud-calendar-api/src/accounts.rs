@@ -24,15 +24,20 @@ pub const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(600);
 #[derive(Debug, Clone, PartialEq)]
 pub enum Link {
     ICloud,
-    Google,
-    Hey { account: Option<String> },
+    /// `address`: the Google address the account is for, when it matters which.
+    Google {
+        address: Option<String>,
+    },
+    Hey {
+        account: Option<String>,
+    },
 }
 
 impl Link {
     pub fn provider(&self) -> &'static str {
         match self {
             Link::ICloud => "icloud",
-            Link::Google => "google",
+            Link::Google { .. } => "google",
             Link::Hey { .. } => "hey",
         }
     }
@@ -81,8 +86,9 @@ pub fn icloud_sign_in() -> Result<()> {
     })
 }
 
-/// `adding`: a new account, which must not be of a Google address another account here has.
-fn sign_in(name: &str, cfg: &AccountConfig, adding: bool) -> Result<String> {
+/// `adding`: a new account, which must not be of a Google address another account here has. `want`: the Google
+/// address a new account is for.
+fn sign_in(name: &str, cfg: &AccountConfig, adding: bool, want: Option<&str>) -> Result<String> {
     match cfg.provider(name) {
         "icloud" => {
             icloud_sign_in()?;
@@ -94,8 +100,14 @@ fn sign_in(name: &str, cfg: &AccountConfig, adding: bool) -> Result<String> {
         }
         "google" => {
             let google = Google::new(name, cfg);
+            let linked = |address: &str| google.others().into_iter().find(|(linked, _)| linked == address);
+            if let Some(want) = want
+                && let Some((_, other)) = linked(want)
+            {
+                return Err(Error::bad_request(format!("{want} is already linked here as {other}")));
+            }
             if !google.works()
-                && let Some((address, app)) = google.adopt()
+                && let Some((address, app)) = google.adopt(want)
             {
                 return Ok(format!("signed in to Google as {address}, with {app}'s sign-in"));
             }
@@ -103,10 +115,16 @@ fn sign_in(name: &str, cfg: &AccountConfig, adding: bool) -> Result<String> {
             let Some(address) = google.address() else {
                 return Ok("signed in to Google".into());
             };
-            if adding && let Some((_, other)) = google.others().into_iter().find(|(linked, _)| *linked == address) {
+            if adding && let Some((_, other)) = linked(&address) {
                 let _ = google.forget();
                 return Err(Error::bad_request(format!(
                     "{address} is already linked here as {other}: choose another Google account in the browser"
+                )));
+            }
+            if let Some(want) = want.filter(|want| *want != address) {
+                let _ = google.forget();
+                return Err(Error::bad_request(format!(
+                    "the browser signed in to {address}, not {want}: choose {want} there"
                 )));
             }
             Ok(format!("signed in to Google as {address}"))
@@ -163,10 +181,14 @@ pub fn add(name: Option<&str>, link: Link) -> Result<(String, String)> {
         ..Default::default()
     };
     match &link {
-        Link::ICloud | Link::Google => {}
+        Link::ICloud | Link::Google { .. } => {}
         Link::Hey { account } => cfg.account = account.clone().filter(|a| !a.trim().is_empty()),
     }
-    let note = sign_in(&name, &cfg, true)?;
+    let want = match &link {
+        Link::Google { address } => address.as_deref().map(|a| a.trim().to_lowercase()),
+        _ => None,
+    };
+    let note = sign_in(&name, &cfg, true, want.as_deref().filter(|a| !a.is_empty()))?;
     config::update(|config| {
         free(config)?;
         config.accounts.insert(name.clone(), cfg);
@@ -182,7 +204,7 @@ pub fn login(name: &str) -> Result<String> {
         .accounts
         .get(name)
         .ok_or_else(|| Error::new(ErrorKind::NotFound, format!("no account named {name}")))?;
-    sign_in(name, cfg, false)
+    sign_in(name, cfg, false, None)
 }
 
 /// Unlinks an account and forgets what Cloud Calendar kept for it.

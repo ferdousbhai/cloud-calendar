@@ -587,6 +587,50 @@ fn several_google_accounts_each_take_over_their_own_address() {
     sibling_sign_in(&home, "cloud-contacts/gws/google", &status("work@example.com"));
     let own = |name: &str, file: &str| home.file(&format!("config/cloud-calendar/gws/{name}/{file}"));
 
+    // `--address` says which one a new account is for.
+    let (v, code) = home.json(
+        &[
+            "account",
+            "add",
+            "google",
+            "--name",
+            "picked",
+            "--address",
+            "Work@Example.com",
+        ],
+        &builtin,
+    );
+    assert_eq!(code, 0, "{v}");
+    assert!(v["summary"].as_str().unwrap().contains("as work@example.com"), "{v}");
+    let (v, code) = home.json(&["account", "add", "google", "--address", "work@example.com"], &builtin);
+    assert_eq!((code, v["error"]["code"].as_str()), (1, Some("bad_request")), "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("work@example.com is already linked here as picked"),
+        "{v}"
+    );
+    let (v, code) = home.json(&["account", "add", "icloud", "--address", "a@b.c"], &builtin);
+    assert_eq!((code, v["error"]["code"].as_str()), (1, Some("bad_request")), "{v}");
+    let (v, code) = home.json(&["account", "remove", "picked", "--yes"], &builtin);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(logins(&home), 0);
+    // An address no other app has is signed in to in the browser, and must be the one it signs in to.
+    let out = home.run(
+        &["--json", "account", "add", "google", "--address", "new@example.com"],
+        "",
+        &builtin,
+    );
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("the browser signed in to me@gmail.com, not new@example.com"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!home.dir.join("config/cloud-calendar/gws/google").exists());
+    let _ = std::fs::remove_file(home.dir.join("gws.log"));
+
     // One address at a time, Cloudmail's first; then nothing is left to take over.
     let (v, code) = home.json(&["account", "add", "google"], &builtin);
     assert_eq!(code, 0, "{v}");

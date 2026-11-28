@@ -355,9 +355,14 @@ fn account(a: AccountCommand) -> api::Result<Out> {
             Ok(out)
         }
         AccountCommand::Add(args) => {
+            if args.address.is_some() && args.provider != "google" {
+                return Err(Error::bad_request("--address is for google"));
+            }
             let link = match args.provider.as_str() {
                 "icloud" => api::accounts::Link::ICloud,
-                "google" => api::accounts::Link::Google,
+                "google" => api::accounts::Link::Google {
+                    address: args.address.clone(),
+                },
                 "hey" => api::accounts::Link::Hey {
                     account: args.hey_account.clone(),
                 },

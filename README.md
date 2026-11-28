@@ -100,8 +100,8 @@ cloud-calendar account add google --name work   # its IDs start with work:
 In the window, the Google button under Accounts links one more each time (`google`, `google-2`, …).
 A new account takes over the sign-in of an address Cloudmail or Cloud Contacts has and Cloud
 Calendar doesn't yet, one address at a time; with none left, the browser opens for you to choose
-the account. The same address can't be linked twice. `cloud-calendar account list` shows which
-address each account is.
+the account. `--address you@example.com` says which address a new account is for. The same
+address can't be linked twice. `cloud-calendar account list` shows which address each account is.
 
 Calendars you've hidden in Google Calendar stay hidden here. `gws` keeps the sign-in in Cloud
 Calendar's own directory (`~/.config/cloud-calendar/gws/<name>`), apart from any `gws` you use

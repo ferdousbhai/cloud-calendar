@@ -105,6 +105,9 @@ pub struct AddArgs {
     /// The account's name, which prefixes its IDs (default: the provider)
     #[arg(long)]
     pub name: Option<String>,
+    /// Google: the address the account is for, when Cloudmail or Cloud Contacts is signed in to several
+    #[arg(long)]
+    pub address: Option<String>,
     /// HEY: the hey CLI's linked-account selector
     #[arg(long)]
     pub hey_account: Option<String>,
