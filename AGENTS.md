@@ -80,7 +80,10 @@ Accounts are windows of their own, which `shot` does not take, so their pictures
 - One Google sign-in serves Cloudmail, Cloud Calendar and Cloud Contacts: they share the OAuth client, the
   browser sign-in asks for all three apps' scopes (`google::SIGN_IN_SCOPES`, the same list in each app), and an
   account that isn't signed in first copies a working sign-in from the other two apps' gws directories
-  (`Google::adopt`, from `accounts::sign_in`). It is a copy, never a shared directory.
+  (`Google::adopt`, from `accounts::sign_in`). It is a copy, never a shared directory. Several Google accounts
+  are accounts of their own names (`--name`; the window's Google button uses `accounts::next_name`); each keeps
+  its address in `gws/<name>/address`, a new one takes over an address not linked here yet, one signed in again
+  only its own, and `add` refuses an address another account has.
 - Provider limits are deliberate (repeating iCloud events read-only, HEY edits drop countdowns and
   need both start and end); keep the CLI/editor warnings (`edit_side_effects`) in sync with them.
 - The app's binary holds omui's Strata-derived code and Lucide icons: a change of the omui `rev`

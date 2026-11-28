@@ -81,7 +81,8 @@ pub fn icloud_sign_in() -> Result<()> {
     })
 }
 
-fn sign_in(name: &str, cfg: &AccountConfig) -> Result<String> {
+/// `adding`: a new account, which must not be of a Google address another account here has.
+fn sign_in(name: &str, cfg: &AccountConfig, adding: bool) -> Result<String> {
     match cfg.provider(name) {
         "icloud" => {
             icloud_sign_in()?;
@@ -98,7 +99,17 @@ fn sign_in(name: &str, cfg: &AccountConfig) -> Result<String> {
             {
                 return Ok(format!("signed in to Google as {address}, with {app}'s sign-in"));
             }
-            google.login().map(|_| "signed in to Google".into())
+            google.login()?;
+            let Some(address) = google.address() else {
+                return Ok("signed in to Google".into());
+            };
+            if adding && let Some((_, other)) = google.others().into_iter().find(|(linked, _)| *linked == address) {
+                let _ = google.forget();
+                return Err(Error::bad_request(format!(
+                    "{address} is already linked here as {other}: choose another Google account in the browser"
+                )));
+            }
+            Ok(format!("signed in to Google as {address}"))
         }
         "hey" => {
             let hey = Hey::new(name, cfg);
@@ -110,6 +121,16 @@ fn sign_in(name: &str, cfg: &AccountConfig) -> Result<String> {
         }
         other => Err(Error::new(ErrorKind::Config, format!("unknown provider {other}"))),
     }
+}
+
+/// The name another account of `provider` gets when none is asked for: the provider's while it is free, then
+/// `google-2`, `google-3`, … The window's Google button links one more Google account each time.
+pub fn next_name(provider: &str) -> Result<String> {
+    let config = config::load()?;
+    Ok(std::iter::once(provider.to_string())
+        .chain((2..).map(|n| format!("{provider}-{n}")))
+        .find(|name| !config.accounts.contains_key(name))
+        .unwrap_or_default())
 }
 
 /// Links an account and signs in to it; returns its name and what happened.
@@ -125,7 +146,9 @@ pub fn add(name: Option<&str>, link: Link) -> Result<(String, String)> {
     // minutes, and accounts may be linked or removed meanwhile.
     let free = |config: &Config| {
         if config.accounts.contains_key(&name) {
-            return Err(Error::bad_request(format!("an account named {name} is already linked")));
+            return Err(Error::bad_request(format!(
+                "an account named {name} is already linked; link another with `--name <name>`"
+            )));
         }
         if provider == "icloud" && config.accounts.iter().any(|(n, c)| c.provider(n) == "icloud") {
             return Err(Error::bad_request(
@@ -143,7 +166,7 @@ pub fn add(name: Option<&str>, link: Link) -> Result<(String, String)> {
         Link::ICloud | Link::Google => {}
         Link::Hey { account } => cfg.account = account.clone().filter(|a| !a.trim().is_empty()),
     }
-    let note = sign_in(&name, &cfg)?;
+    let note = sign_in(&name, &cfg, true)?;
     config::update(|config| {
         free(config)?;
         config.accounts.insert(name.clone(), cfg);
@@ -159,7 +182,7 @@ pub fn login(name: &str) -> Result<String> {
         .accounts
         .get(name)
         .ok_or_else(|| Error::new(ErrorKind::NotFound, format!("no account named {name}")))?;
-    sign_in(name, cfg)
+    sign_in(name, cfg, false)
 }
 
 /// Unlinks an account and forgets what Cloud Calendar kept for it.

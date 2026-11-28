@@ -569,37 +569,83 @@ fn google_takes_over_another_cloud_apps_sign_in() {
 }
 
 #[test]
-fn google_asks_in_the_browser_when_two_addresses_could_be_taken_over() {
+fn several_google_accounts_each_take_over_their_own_address() {
     let home = Home::new("google-adopt-two", true);
     let builtin = [
         ("CLOUD_CALENDAR_GOOGLE_CLIENT_ID", ""),
         ("CLOUD_CALENDAR_GOOGLE_CLIENT_SECRET", ""),
         ("FAKE_GWS_SECRET", cloud_calendar_api::google::GOOGLE_CLIENT_SECRET),
     ];
-    for (dir, user) in [
-        ("cloudmail/gws/gmail", "sam@gmail.com"),
-        ("cloud-contacts/gws/google", "work@example.com"),
-    ] {
-        sibling_sign_in(
-            &home,
-            dir,
-            &format!(r#"{{"token_valid":true,"user":"{user}","scopes":[{ALL_SCOPES}]}}"#),
-        );
-    }
+    let logins = |home: &Home| {
+        home.file("gws.log")
+            .lines()
+            .filter(|l| l.starts_with("auth\tlogin"))
+            .count()
+    };
+    let status = |user: &str| format!(r#"{{"token_valid":true,"user":"{user}","scopes":[{ALL_SCOPES}]}}"#);
+    sibling_sign_in(&home, "cloudmail/gws/gmail", &status("sam@gmail.com"));
+    sibling_sign_in(&home, "cloud-contacts/gws/google", &status("work@example.com"));
+    let own = |name: &str, file: &str| home.file(&format!("config/cloud-calendar/gws/{name}/{file}"));
+
+    // One address at a time, Cloudmail's first; then nothing is left to take over.
     let (v, code) = home.json(&["account", "add", "google"], &builtin);
     assert_eq!(code, 0, "{v}");
-    assert!(!v["summary"].as_str().unwrap().contains("with "), "{v}");
-    assert!(home.file("gws.log").lines().any(|l| l.starts_with("auth\tlogin")));
+    assert!(v["summary"].as_str().unwrap().contains("as sam@gmail.com"), "{v}");
+    let (v, code) = home.json(&["account", "add", "google"], &builtin);
+    assert_eq!((code, v["error"]["code"].as_str()), (1, Some("bad_request")));
+    assert!(v["error"]["message"].as_str().unwrap().contains("--name"), "{v}");
+    let (v, code) = home.json(&["account", "add", "google", "--name", "work"], &builtin);
+    assert_eq!(code, 0, "{v}");
+    assert!(
+        v["summary"]
+            .as_str()
+            .unwrap()
+            .contains("as work@example.com, with Cloud Contacts's sign-in"),
+        "{v}"
+    );
+    assert_eq!(logins(&home), 0);
+    assert_eq!(
+        (own("google", "address"), own("work", "address")),
+        ("sam@gmail.com".into(), "work@example.com".into())
+    );
+    let (v, code) = home.json(&["account", "list"], &builtin);
+    assert_eq!(code, 0, "{v}");
+    assert!(v.to_string().contains("work@example.com, signed in via"), "{v}");
+
+    // A third account signs in in the browser, and not to an address linked here already.
+    let third = |user: &'static str| {
+        let mut env = builtin.to_vec();
+        env.push(("FAKE_GWS_USER", user));
+        home.run(&["--json", "account", "add", "google", "--name", "third"], "", &env)
+    };
+    // (The sign-in link is on stderr before the error.)
+    let out = third("Sam@gmail.com");
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert_eq!(out.status.code(), Some(1), "{stderr}");
+    assert!(
+        stderr.contains("sam@gmail.com is already linked here as google"),
+        "{stderr}"
+    );
+    assert!(!home.dir.join("config/cloud-calendar/gws/third").exists());
+    assert!(!home.file("config/cloud-calendar/config.toml").contains("third"));
+    let out = third("third@example.com");
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(logins(&home), 2);
+    assert_eq!(own("third", "address"), "third@example.com");
+
+    // An account Google stopped taking is signed in again with its own address's sign-in, not the first there is.
+    let dead = home.dir.join("config/cloud-calendar/gws/work/credentials.enc");
+    std::fs::write(&dead, r#"{"token_valid":false}"#).unwrap();
+    let (v, code) = home.json(&["account", "login", "work"], &builtin);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(logins(&home), 2, "{v}");
+    assert_eq!(std::fs::read_to_string(&dead).unwrap(), status("work@example.com"));
 
     // A client of your own never takes over a sign-in made with the built-in one.
     let home = Home::new("google-adopt-own-client", true);
-    sibling_sign_in(
-        &home,
-        "cloudmail/gws/gmail",
-        &format!(r#"{{"token_valid":true,"user":"sam@gmail.com","scopes":[{ALL_SCOPES}]}}"#),
-    );
+    sibling_sign_in(&home, "cloudmail/gws/gmail", &status("sam@gmail.com"));
     home.link_google();
-    assert!(home.file("gws.log").lines().any(|l| l.starts_with("auth\tlogin")));
+    assert_eq!(logins(&home), 1);
 }
 
 #[test]

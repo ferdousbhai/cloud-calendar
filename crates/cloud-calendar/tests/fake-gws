@@ -4,6 +4,7 @@
 #
 #   FAKE_GWS_LOG=<file>   append each invocation's arguments (tab-separated) to <file>
 #   FAKE_GWS_MODE=ok (default) | expired | offline
+#   FAKE_GWS_USER=<address>   who `auth login` signs in (default me@gmail.com)
 [[ -n "$FAKE_GWS_LOG" ]] && (IFS=$'\t'; printf '%s\n' "$*") >> "$FAKE_GWS_LOG"
 # The OAuth client comes through the environment; any other client is refused.
 [[ "$GOOGLE_WORKSPACE_CLI_CLIENT_SECRET" == "${FAKE_GWS_SECRET:?}" && -n "$GOOGLE_WORKSPACE_CLI_CLIENT_ID" ]] || { echo '{"error":{"code":401,"message":"invalid_client"}}'; exit 2; }
@@ -11,7 +12,7 @@
 if [[ "$1 $2" == "auth login" ]]; then
   echo "Open this URL: https://accounts.google.com/o/oauth2/auth?x" >&2
   : > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.encryption_key"
-  printf '{"token_valid":true,"user":"me@gmail.com","scopes":["openid","%s"]}\n' "${4//,/\",\"}" \
+  printf '{"token_valid":true,"user":"%s","scopes":["openid","%s"]}\n' "${FAKE_GWS_USER:-me@gmail.com}" "${4//,/\",\"}" \
     > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/credentials.enc"; exit 0
 fi
 if [[ "$1 $2" == "auth status" ]]; then

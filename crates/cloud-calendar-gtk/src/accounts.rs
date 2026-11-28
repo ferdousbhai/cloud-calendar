@@ -225,7 +225,11 @@ pub fn open(ui: &Rc<Ui>) {
         win,
         move |_| win.run(
             || tr("Signing in to Google… (finish in your browser)"),
-            || { api::accounts::add(None, Link::Google).map(|(_, note)| note) }
+            // One more Google account each time: google, then google-2, …
+            || {
+                let name = api::accounts::next_name("google")?;
+                api::accounts::add(Some(&name), Link::Google).map(|(_, note)| note)
+            }
         )
     ));
 

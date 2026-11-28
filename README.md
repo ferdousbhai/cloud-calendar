@@ -91,6 +91,18 @@ two won't ask again; Cloud Calendar itself reads and writes events and reads you
 nothing else. To use another Google account than the one it took, run
 `cloud-calendar account login google`: an account that is signed in always gets the browser.
 
+Several Google accounts work side by side, each under a name of its own:
+
+```sh
+cloud-calendar account add google --name work   # its IDs start with work:
+```
+
+In the window, the Google button under Accounts links one more each time (`google`, `google-2`, …).
+A new account takes over the sign-in of an address Cloudmail or Cloud Contacts has and Cloud
+Calendar doesn't yet, one address at a time; with none left, the browser opens for you to choose
+the account. The same address can't be linked twice. `cloud-calendar account list` shows which
+address each account is.
+
 Calendars you've hidden in Google Calendar stay hidden here. `gws` keeps the sign-in in Cloud
 Calendar's own directory (`~/.config/cloud-calendar/gws/<name>`), apart from any `gws` you use
 yourself. A sign-in taken from another Cloud app is a copy kept there too, so removing the account
